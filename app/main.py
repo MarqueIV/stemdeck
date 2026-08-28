@@ -18,7 +18,7 @@ from importlib.metadata import version as package_version
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.router import router
@@ -47,6 +47,7 @@ from app.core.settings import (
     get_allow_network,
     get_auto_delete_days,
     get_auto_delete_jobs,
+    get_auto_sections,
     get_cookies_file,
     get_demucs_device,
     get_demucs_device_choice,
@@ -60,6 +61,7 @@ from app.core.settings import (
     set_allow_network,
     set_auto_delete_days,
     set_auto_delete_jobs,
+    set_auto_sections,
     set_cookies_file,
     set_demucs_device,
     set_export_sample_rate,
@@ -79,6 +81,7 @@ from app.core.stems_location import (
     validate_target,
 )
 from app.pipeline.collect import sweep_failed_jobs, sweep_old_jobs
+from app.pipeline.sections import sweep_orphaned_workspaces as sweep_orphaned_section_workspaces
 
 # Set the stemdeck logger level (Python's default root level of WARNING would
 # silently drop every logger.info(...) call) and attach the rotating file log
@@ -195,6 +198,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # A restored queue can be dozens of tracks and hours of GPU, and the user
     # may well have opened StemDeck to do something else entirely. They press
     # Start (or simply import something new, which lifts the pause).
+    # Nothing is analyzing yet, so any section workspace still on disk belongs
+    # to a process that died mid-stage and is safe to remove (#483).
+    try:
+        await asyncio.to_thread(sweep_orphaned_section_workspaces, JOBS_DIR)
+    except Exception:
+        _log.exception("could not sweep orphaned section workspaces")
+
     resumed = take_pending_resume()
     if resumed:
         jobqueue.pause()
@@ -324,6 +334,10 @@ def _settings_payload() -> dict[str, object]:
         # rather than appearing empty on first click.
         "auto_delete_jobs": get_auto_delete_jobs(),
         "auto_delete_days": get_auto_delete_days(),
+        # Automatic song-structure detection. Costs a CPU inference pass per
+        # job and produces suggestions rather than ground truth, so the user
+        # decides whether to pay for it.
+        "auto_sections": get_auto_sections(),
         "auto_delete_days_min": AUTO_DELETE_DAYS_MIN,
         "auto_delete_days_max": AUTO_DELETE_DAYS_MAX,
         "max_duration_sec": get_max_duration_sec(),
@@ -374,6 +388,8 @@ async def update_settings(request: Request) -> dict[str, object]:
         set_allow_network(bool(body["allow_network"]))
     if "auto_delete_jobs" in body:
         set_auto_delete_jobs(bool(body["auto_delete_jobs"]))
+    if "auto_sections" in body:
+        set_auto_sections(bool(body["auto_sections"]))
     for key, setter in (
         ("auto_delete_days", set_auto_delete_days),
         ("max_duration_sec", set_max_duration_sec),
@@ -822,6 +838,33 @@ _CSP = (
 # restarts -- updated HTML loads against stale modules and the form
 # silently breaks. `must-revalidate` keeps 304s working (cheap) while
 # guaranteeing the latest mtime is honored.
+# The timeline editors post JSON that is bounded by its model, but a model
+# bounds only what is *stored*. FastAPI reads and parses a request body before
+# the handler runs, so an oversized payload holds the event loop no matter what
+# the model says: 32 MB of sections stalled every other request, including a
+# running job's progress stream, for five seconds, and needed no valid job to
+# do it (#481). Content-Length is checked here because middleware is the last
+# point that runs before the body is touched. Same shape as the upload
+# pre-check in app/api/jobs.py.
+#
+# The ceiling is far above either editor's reach: 10000 sections with the
+# longest name each is about 1.6 MB, and 20000 beats about 0.4 MB. Uploads are
+# unaffected -- they are a different path with their own 400 MB limit.
+_EDITOR_BODY_LIMIT = 4 * 1024 * 1024
+_EDITOR_PATH_SUFFIXES = ("/sections", "/beats")
+
+
+@app.middleware("http")
+async def limit_editor_body_size(request: Request, call_next):
+    if request.method in ("PATCH", "POST", "PUT") and request.url.path.endswith(
+        _EDITOR_PATH_SUFFIXES
+    ):
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > _EDITOR_BODY_LIMIT:
+            return JSONResponse({"detail": "request body too large"}, status_code=413)
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def security_and_cache_headers(request: Request, call_next):
     response = await call_next(request)

@@ -378,6 +378,7 @@ function stateMetadataToTrack(state, fallbackTrack) {
     tempoStability: state.tempo_stability ?? fallbackTrack.tempoStability,
     tags: state.tags ?? fallbackTrack.tags ?? [],
     sections: state.sections ?? fallbackTrack.sections ?? null,
+    sectionsSource: state.sections_source ?? fallbackTrack.sectionsSource ?? null,
     sourceUrl: state.source_url || fallbackTrack.sourceUrl,
     mixUrl: state.mix_url ?? fallbackTrack.mixUrl ?? null,
     hasVideo: state.has_video ?? fallbackTrack.hasVideo ?? false,

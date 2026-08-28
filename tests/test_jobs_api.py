@@ -293,7 +293,16 @@ def done_job(client, tmp_path, monkeypatch):
 
 def test_sections_happy_path(client, done_job, tmp_path):
     payload = {
-        "sections": [{"id": "sec1", "name": "Verse", "start": 0.0, "end": 30.0, "color": "#ff0000"}]
+        "sections": [
+            {
+                "id": "sec1",
+                "name": "Verse",
+                "kind": "verse",
+                "start": 0.0,
+                "end": 30.0,
+                "color": "#ff0000",
+            }
+        ]
     }
     r = client.patch(f"/api/jobs/{done_job.id}/sections", json=payload)
     assert r.status_code == 200
@@ -301,11 +310,122 @@ def test_sections_happy_path(client, done_job, tmp_path):
     assert body["job_id"] == done_job.id
     assert len(body["sections"]) == 1
     assert body["sections"][0]["name"] == "Verse"
+    assert body["sections_source"] == "manual"
+    assert done_job.sections_source == "manual"
     # Verify written to disk
     meta_path = tmp_path / done_job.id / "metadata.json"
     assert meta_path.is_file()
     meta = json.loads(meta_path.read_text())
     assert meta["sections"][0]["id"] == "sec1"
+    assert meta["sections_source"] == "manual"
+
+
+def test_sections_accepts_neutral_part_kind(client, done_job):
+    payload = {
+        "sections": [
+            {
+                "id": "auto-005",
+                "name": "Part",
+                "kind": "part",
+                "start": 49.874,
+                "end": 65.901,
+                "color": "#8391a5",
+            }
+        ]
+    }
+
+    response = client.patch(f"/api/jobs/{done_job.id}/sections", json=payload)
+
+    assert response.status_code == 200
+    assert response.json()["sections"][0]["kind"] == "part"
+
+
+def _section(index: int) -> dict:
+    return {
+        "id": f"sec{index}",
+        "name": "Verse",
+        "kind": "verse",
+        "start": 0.0,
+        "end": 1.0,
+        "color": "#00c8a0",
+    }
+
+
+def test_sections_rejects_a_list_long_enough_to_stall_the_server(client, done_job):
+    """The body is parsed before the handler runs, so an unbounded list holds
+    the event loop and every other request with it (#481). A 33 MB body stalled
+    an idle server's health check from 31 ms to 3.8 seconds."""
+    import app.api.jobs as jobs_mod
+
+    payload = {"sections": [_section(i) for i in range(jobs_mod._MAX_SECTIONS + 1)]}
+
+    r = client.patch(f"/api/jobs/{done_job.id}/sections", json=payload)
+
+    assert r.status_code == 422
+    assert done_job.sections is None  # nothing partially applied
+
+
+def test_sections_cap_clears_the_longest_legitimate_track(client, done_job):
+    """0.5 s is the shortest section either the editor or normalize_sections
+    allows, so a 3600 s track tops out at 7200. The cap must not reject that."""
+    import app.api.jobs as jobs_mod
+
+    assert jobs_mod._MAX_SECTIONS >= 3600 / 0.5
+
+    payload = {"sections": [_section(i) for i in range(7200)]}
+
+    assert client.patch(f"/api/jobs/{done_job.id}/sections", json=payload).status_code == 200
+
+
+def test_oversized_editor_body_is_refused_before_it_is_parsed(client, done_job):
+    """A model cap bounds what is stored, not what is parsed.
+
+    FastAPI reads and validates a request body before the handler runs, so the
+    max_length above does not stop an oversized payload from holding the event
+    loop. Measured against a live server: 32 MB of sections took an idle health
+    check from 32 ms to 5219 ms, and 16 ms once Content-Length was checked in
+    middleware first (#481).
+    """
+    from app.main import _EDITOR_BODY_LIMIT
+
+    padded = dict(_section(0), name="V" * 64)
+    count = (_EDITOR_BODY_LIMIT // len(json.dumps(padded, separators=(",", ":")))) + 500
+    payload = {"sections": [dict(padded, id=f"sec{i}") for i in range(count)]}
+    # Sent as the exact bytes measured, so the assertion cannot drift from what
+    # actually goes on the wire and quietly stop testing the ceiling.
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    assert len(raw) > _EDITOR_BODY_LIMIT
+
+    r = client.patch(
+        f"/api/jobs/{done_job.id}/sections",
+        content=raw,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert r.status_code == 413
+    assert done_job.sections is None
+
+
+def test_the_body_ceiling_clears_the_largest_legitimate_editor_payload(client, done_job):
+    """The ceiling must never be reachable by a real track. 10000 sections at
+    the longest permitted name is about 1.6 MB against a 4 MB ceiling."""
+    import app.api.jobs as jobs_mod
+    from app.main import _EDITOR_BODY_LIMIT
+
+    payload = {
+        "sections": [
+            dict(_section(i), id=f"sec{i}", name="V" * 64) for i in range(jobs_mod._MAX_SECTIONS)
+        ]
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    assert len(raw) < _EDITOR_BODY_LIMIT
+
+    r = client.patch(
+        f"/api/jobs/{done_job.id}/sections",
+        content=raw,
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 200
 
 
 def test_sections_unknown_job_returns_404(client):
@@ -336,6 +456,56 @@ def test_sections_invalid_id_returns_422(client, done_job):
     }
     r = client.patch(f"/api/jobs/{done_job.id}/sections", json=payload)
     assert r.status_code == 422
+
+
+def test_sections_invalid_kind_returns_422(client, done_job):
+    payload = {
+        "sections": [
+            {
+                "id": "sec1",
+                "name": "Pre-chorus",
+                "kind": "prechorus",
+                "start": 0.0,
+                "end": 5.0,
+                "color": "#fff",
+            }
+        ]
+    }
+    r = client.patch(f"/api/jobs/{done_job.id}/sections", json=payload)
+    assert r.status_code == 422
+
+
+def test_sections_write_failure_does_not_mutate_live_job(client, done_job, monkeypatch):
+    import app.api.jobs as jobs_mod
+
+    original = [{"id": "old", "name": "Old", "start": 0.0, "end": 5.0, "color": "#fff"}]
+    done_job.sections = original
+    done_job.sections_source = "automatic"
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(jobs_mod, "_write_json_atomic", fail_write)
+    response = client.patch(
+        f"/api/jobs/{done_job.id}/sections",
+        json={
+            "sections": [{"id": "new", "name": "New", "start": 0.0, "end": 5.0, "color": "#000"}]
+        },
+    )
+
+    assert response.status_code == 500
+    assert done_job.sections == original
+    assert done_job.sections_source == "automatic"
+
+
+def test_atomic_section_metadata_write_leaves_no_temporary_file(tmp_path):
+    import app.api.jobs as jobs_mod
+
+    path = tmp_path / "metadata.json"
+    jobs_mod._write_json_atomic(path, {"sections_source": "manual"})
+
+    assert json.loads(path.read_text(encoding="utf-8"))["sections_source"] == "manual"
+    assert not list(tmp_path.glob(".metadata.json.*.tmp"))
 
 
 # ─── SSE job_id validation ────────────────────────────────────────────────────

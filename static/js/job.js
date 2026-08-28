@@ -74,6 +74,8 @@ export async function runVocalSplitIfWanted(state) {
       lufs: finalState.lufs,
       peakDb: finalState.peak_db,
       stemPresence: finalState.stem_presence,
+      sections: finalState.sections,
+      sectionsSource: finalState.sections_source,
       sourceUrl: jobSources.get(finalState.job_id) || "",
       createdAt: finalState.created_at,
     });
@@ -363,6 +365,8 @@ function applyState(state) {
       lufs: state.lufs,
       peakDb: state.peak_db,
       stemPresence: state.stem_presence,
+      sections: state.sections,
+      sectionsSource: state.sections_source,
       sourceUrl: jobSources.get(state.job_id) || (isForeground ? urlInput.value : ""),
       createdAt: state.created_at,
     });

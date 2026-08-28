@@ -216,6 +216,22 @@ function applyStemRowAriaLabels(scope) {
 // ─────────────────────────────────────────────────────────────────────────
 
 const en = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Outro",
+  "sections.kind.break": "Break",
+  "sections.kind.bridge": "Bridge",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Verse",
+  "sections.kind.chorus": "Chorus",
+  "sections.kind.part": "Part",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Clear",
+  "sections.clearAria": "Clear all sections",
+  "sections.clearConfirm": "Confirm?",
+  "structure.toggle": "Song structure",
+  "structure.toggleTitle": "Experimental Song Structure Extraction: automatically label intro, verse and chorus after a split",
+  "structure.experimental": "Experimental",
   "doc.title": "StemDeck — split any track into stems",
 
   "topbar.urlPlaceholder": "Search, or paste a YouTube or SoundCloud link, or drop an audio file…",
@@ -753,6 +769,22 @@ const en = {
 };
 
 const pl = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Zakończenie",
+  "sections.kind.break": "Przerwa",
+  "sections.kind.bridge": "Łącznik",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Zwrotka",
+  "sections.kind.chorus": "Refren",
+  "sections.kind.part": "Część",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Wyczyść",
+  "sections.clearAria": "Wyczyść wszystkie sekcje",
+  "sections.clearConfirm": "Potwierdzić?",
+  "structure.toggle": "Struktura utworu",
+  "structure.toggleTitle": "Eksperymentalne wykrywanie struktury utworu: automatycznie oznacza intro, zwrotkę i refren po podziale",
+  "structure.experimental": "Eksperymentalne",
   "doc.title": "StemDeck — rozdziel dowolny utwór na ścieżki",
 
   "topbar.urlPlaceholder": "Szukaj albo wklej link YouTube lub SoundCloud, albo upuść plik audio…",
@@ -1280,6 +1312,22 @@ const pl = {
 };
 
 const ja = {
+  "sections.kind.intro": "イントロ",
+  "sections.kind.outro": "アウトロ",
+  "sections.kind.break": "ブレイク",
+  "sections.kind.bridge": "ブリッジ",
+  "sections.kind.inst": "インストゥルメンタル",
+  "sections.kind.solo": "ソロ",
+  "sections.kind.verse": "ヴァース",
+  "sections.kind.chorus": "コーラス",
+  "sections.kind.part": "パート",
+  "sections.kindNumbered": "{kind}{n}",
+  "sections.clear": "クリア",
+  "sections.clearAria": "すべてのセクションを削除",
+  "sections.clearConfirm": "確認?",
+  "structure.toggle": "曲の構成",
+  "structure.toggleTitle": "実験的な楽曲構造抽出: 分離後にイントロ、Aメロ、サビを自動でラベル付けします",
+  "structure.experimental": "試験的",
   "doc.title": "StemDeck — トラックをパートごとに分離",
 
   "topbar.urlPlaceholder": "検索するか、YouTube・SoundCloud のリンクを貼り付けるか、音声ファイルをドロップ…",
@@ -1782,6 +1830,22 @@ const ja = {
 };
 
 const zhHans = {
+  "sections.kind.intro": "前奏",
+  "sections.kind.outro": "尾奏",
+  "sections.kind.break": "间奏",
+  "sections.kind.bridge": "过渡段",
+  "sections.kind.inst": "器乐段",
+  "sections.kind.solo": "独奏",
+  "sections.kind.verse": "主歌",
+  "sections.kind.chorus": "副歌",
+  "sections.kind.part": "部分",
+  "sections.kindNumbered": "{kind}{n}",
+  "sections.clear": "清除",
+  "sections.clearAria": "清除所有段落",
+  "sections.clearConfirm": "确认?",
+  "structure.toggle": "歌曲结构",
+  "structure.toggleTitle": "实验性歌曲结构提取: 分离后自动标记前奏、主歌和副歌",
+  "structure.experimental": "实验性",
   "doc.title": "StemDeck — 将任意曲目分离为音轨",
 
   "topbar.urlPlaceholder": "搜索,或粘贴 YouTube 或 SoundCloud 链接,或拖放音频文件…",
@@ -2284,6 +2348,22 @@ const zhHans = {
 };
 
 const de = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Outro",
+  "sections.kind.break": "Break",
+  "sections.kind.bridge": "Bridge",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Strophe",
+  "sections.kind.chorus": "Refrain",
+  "sections.kind.part": "Teil",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Löschen",
+  "sections.clearAria": "Alle Abschnitte löschen",
+  "sections.clearConfirm": "Sicher?",
+  "structure.toggle": "Songstruktur",
+  "structure.toggleTitle": "Experimentelle Songstruktur-Erkennung: beschriftet Intro, Strophe und Refrain nach dem Trennen automatisch",
+  "structure.experimental": "Experimentell",
   "doc.title": "StemDeck — jeden Track in Stems zerlegen",
 
   "topbar.urlPlaceholder": "Suchen, einen YouTube- oder SoundCloud-Link einfügen oder eine Audiodatei ablegen…",
@@ -2797,6 +2877,22 @@ const de = {
 };
 
 const pt = {
+  "sections.kind.intro": "Introdução",
+  "sections.kind.outro": "Final",
+  "sections.kind.break": "Pausa",
+  "sections.kind.bridge": "Ponte",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Verso",
+  "sections.kind.chorus": "Refrão",
+  "sections.kind.part": "Parte",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Limpar",
+  "sections.clearAria": "Limpar todas as seções",
+  "sections.clearConfirm": "Confirmar?",
+  "structure.toggle": "Estrutura da música",
+  "structure.toggleTitle": "Extração experimental da estrutura da música: marca intro, verso e refrão automaticamente após a separação",
+  "structure.experimental": "Experimental",
   "doc.title": "StemDeck — separe qualquer faixa em stems",
 
   "topbar.urlPlaceholder": "Pesquise, ou cole um link do YouTube ou SoundCloud, ou solte um arquivo de áudio…",
@@ -3312,6 +3408,22 @@ const pt = {
 };
 
 const id = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Outro",
+  "sections.kind.break": "Jeda",
+  "sections.kind.bridge": "Bridge",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Bait",
+  "sections.kind.chorus": "Refrain",
+  "sections.kind.part": "Bagian",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Hapus",
+  "sections.clearAria": "Hapus semua bagian",
+  "sections.clearConfirm": "Yakin?",
+  "structure.toggle": "Struktur lagu",
+  "structure.toggleTitle": "Ekstraksi struktur lagu eksperimental: menandai intro, bait, dan refrein secara otomatis setelah pemisahan",
+  "structure.experimental": "Eksperimental",
   "doc.title": "StemDeck — pisahkan trek apa pun menjadi stem",
 
   "topbar.urlPlaceholder": "Cari, atau tempel tautan YouTube atau SoundCloud, atau seret file audio…",
@@ -3814,6 +3926,22 @@ const id = {
 };
 
 const fr = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Outro",
+  "sections.kind.break": "Pause",
+  "sections.kind.bridge": "Pont",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Couplet",
+  "sections.kind.chorus": "Refrain",
+  "sections.kind.part": "Partie",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Effacer",
+  "sections.clearAria": "Effacer toutes les sections",
+  "sections.clearConfirm": "Confirmer ?",
+  "structure.toggle": "Structure du morceau",
+  "structure.toggleTitle": "Extraction expérimentale de la structure: étiquette automatiquement intro, couplet et refrain après la séparation",
+  "structure.experimental": "Expérimental",
   "doc.title": "StemDeck — séparez n'importe quel morceau en pistes",
 
   "topbar.urlPlaceholder": "Recherchez, ou collez un lien YouTube ou SoundCloud, ou déposez un fichier audio…",
@@ -4401,6 +4529,7 @@ const ptPT = {
   "settings.folder.save": "Guardar",
   "folderEditor.save": "Guardar",
   "sections.savingAria": "A guardar secções",
+  "sections.clearAria": "Limpar todas as secções",
   "aria.download": "Transferir {name}",
   "release.download": "Transferir",
   "release.downloading": "A transferir atualização…",
@@ -4427,6 +4556,22 @@ const ptPT = {
 };
 
 const es = {
+  "sections.kind.intro": "Intro",
+  "sections.kind.outro": "Outro",
+  "sections.kind.break": "Pausa",
+  "sections.kind.bridge": "Puente",
+  "sections.kind.inst": "Instrumental",
+  "sections.kind.solo": "Solo",
+  "sections.kind.verse": "Estrofa",
+  "sections.kind.chorus": "Estribillo",
+  "sections.kind.part": "Parte",
+  "sections.kindNumbered": "{kind} {n}",
+  "sections.clear": "Borrar",
+  "sections.clearAria": "Borrar todas las secciones",
+  "sections.clearConfirm": "¿Confirmar?",
+  "structure.toggle": "Estructura de la canción",
+  "structure.toggleTitle": "Extracción experimental de la estructura: etiqueta automáticamente intro, verso y estribillo tras la separación",
+  "structure.experimental": "Experimental",
   "doc.title": "StemDeck — separa cualquier pista en stems",
 
   "topbar.urlPlaceholder": "Busca, pega un enlace de YouTube o SoundCloud, o suelta un archivo de audio…",
