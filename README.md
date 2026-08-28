@@ -49,7 +49,7 @@ Drop in an MP3, WAV, FLAC, OGG/Opus, MP4, or M4A file, or paste a YouTube URL, a
 
 ## We Recommend
 
-StemDeck is free and **does not accept any money, sponsorship, or funding** - not from anyone listed below. We share these makers and artists and communities purely for the joy of pointing you toward wonderful people doing beautiful work. Go meet them ❤️
+StemDeck is free and **does not accept any money, sponsorship, or funding**  from anyone listed below. I share these makers and artists and communities purely for the joy of pointing you toward wonderful people doing beautiful work. Go meet them ❤️
 
 | Name | What they do | Link |
 |---|---|---|
