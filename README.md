@@ -54,6 +54,7 @@ StemDeck is free and **does not accept any money, sponsorship, or funding** - no
 | Name | What they do | Link |
 |---|---|---|
 | Analog4Lyfe | All-analog music gear, no digital shortcuts | [@analog4lyfe](https://www.instagram.com/analog4lyfe) |
+| r/bass | My Beloed bass community on reddit  | [r/Bass](https://www.reddit.com/r/Bass) |
 | Beltr | Turns the songs you already own into karaoke gold, right on your own machine, no subscription, no cloud, just you and the mic | [beltr.app](https://beltr.app/) |
 | Dlima Guitars | Custom guitars and basses, built one at a time | [@dlimaguitars](https://www.instagram.com/dlimaguitars) |
 | Empress Effects | Boutique effects pedals for tone chasers who don't settle | [empresseffects.com](https://empresseffects.com) |
