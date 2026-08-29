@@ -19,6 +19,7 @@ import {
   setMetronomeHasBars,
   setMetronomeEnabled, setMetronomeVolume, setMetronomeBeatsPerBar,
   setLoopEnabled, setLoopStart, setLoopEnd, setMasterVolume, setPlaybackSpeed,
+  waveZoom, setWaveZoom, overviewRerenderFn,
 } from "./state.js";
 import { applyMix, nudgeAllLanePitches, resetAllLanePitches } from "./mixer.js";
 import { isDownbeatIndex, getBeats as getGridBeats, getBars as getGridBars } from "./beatgrid.js";
@@ -26,6 +27,16 @@ import { computeCountIn } from "./metronome.js";
 import { t } from "./i18n.js";
 
 const MIN_LOOP_SEC = 0.2;
+// Zoom range. 1 is the whole track fitted to the panel; there is nothing below
+// it to show, so it is the floor rather than a soft default. 5 is the ceiling
+// because peaks.json carries 1500 points per stem: past roughly 5x a typical
+// panel asks for more bars than there are samples behind them, and the extra
+// bars repeat their neighbours instead of revealing anything.
+const WAVE_ZOOM_MIN = 1;
+export const WAVE_ZOOM_MAX = 5;
+// One wheel notch. Multiplicative, so a notch covers the same proportion of the
+// range at 1x as at 4x; linear steps feel fast at the bottom and stuck at the top.
+const WAVE_ZOOM_STEP = 1.18;
 // Below this visible width the waveform stops compressing to fit and instead
 // keeps a minimum size, overflowing horizontally so .wave-scroll can scroll.
 const WAVE_MIN_WIDTH = 720;
@@ -72,8 +83,32 @@ function setPlayheadTime(sec) {
 // Spacing of the timeline's labelled ticks. Shared by the ruler above the
 // lanes and the one on the footer waveform: the two strips are the same width
 // and start at the same x, so a time has to land at the same place in both.
-function tickStep(durationSec) {
-  return durationSec < 90 ? 15 : durationSec < 300 ? 30 : 60;
+// Label spacing the ruler will not go below, comfortably wider than a "10:00"
+// label so neighbours never crowd each other.
+const MIN_TICK_PX = 110;
+const TICK_LADDER = [1, 2, 5, 10, 15, 30, 60, 120, 300];
+
+// `contentWidthPx` is the width the ticks will actually occupy. Omitted (the
+// footer strip, which always shows the whole track) the step is the plain
+// duration-based one, which is also what 1x has always used.
+// The step the ruler was last built with. buildRuler mutates elements inside
+// .wave-scroll, which is the element the resize observer watches, so rebuilding
+// unconditionally from that callback can re-trigger it. Comparing against this
+// makes the rebuild idempotent: once the ruler matches the width, it settles.
+let _rulerStep = 0;
+
+function tickStep(durationSec, contentWidthPx = 0) {
+  const base = durationSec < 90 ? 15 : durationSec < 300 ? 30 : 60;
+  // Zoom is the only thing that subdivides it. Spreading the same handful of
+  // ticks across five screen widths would make the ruler less useful the
+  // further in you went, which is backwards.
+  if (waveZoom <= 1 || !contentWidthPx || !durationSec) return base;
+  const pxPerSec = contentWidthPx / durationSec;
+  for (const step of TICK_LADDER) {
+    if (step > base) break;
+    if (step * pxPerSec >= MIN_TICK_PX) return step;
+  }
+  return base;
 }
 
 export function buildRuler(durationSec) {
@@ -87,7 +122,10 @@ export function buildRuler(durationSec) {
   rulerTime.appendChild(marker);
 
   if (!durationSec || durationSec <= 0) return;
-  const step = tickStep(durationSec);
+  // The ruler is width: calc(100% * var(--zoom)), so its own box already is the
+  // zoomed width; no need to recompute it here.
+  const step = tickStep(durationSec, rulerTime.getBoundingClientRect().width);
+  _rulerStep = step;
   for (let t = 0; t <= durationSec; t += step) {
     const leftPct = (t / durationSec) * 100;
     const tick = document.createElement("div");
@@ -494,8 +532,10 @@ export function applyWaveZoom() {
   if (multitrack && totalDuration > 0 && waveScroll) {
     const baseWidth = waveScroll.clientWidth;
     if (baseWidth > 0) {
-      // Fit to the visible width, but never compress below WAVE_MIN_WIDTH.
-      const contentWidth = Math.max(baseWidth, WAVE_MIN_WIDTH);
+      // Two separate reasons the content can be wider than the viewport, and
+      // they multiply rather than compete: the user's zoom, and the floor that
+      // stops the whole track compressing into a sliver on a narrow window.
+      const contentWidth = Math.max(baseWidth * waveZoom, WAVE_MIN_WIDTH);
       const zoom = contentWidth / baseWidth;
       // Widen the container via --zoom FIRST. Then, after the browser has
       // reflowed it, zoom WaveSurfer to fit the container's *actual* width.
@@ -508,10 +548,67 @@ export function applyWaveZoom() {
         if (!multitrack || totalDuration <= 0) return;
         const w = multitrackContainer?.clientWidth || contentWidth;
         try { multitrack.zoom(w / totalDuration); } catch { /* ignore -- pre-canplay */ }
+        // Redraw the SVG bars against the width the reflow actually produced.
+        // The bars are 1 viewBox unit each, so leaving the old count in place
+        // would stretch every bar by the zoom factor: same waveform, fatter
+        // strokes. Redrawing keeps them 3px wide and spends the extra width on
+        // detail instead, which is the whole point of zooming in.
+        overviewRerenderFn?.();
         syncRulerScroll();
       });
     }
   }
+}
+
+/**
+ * Set the zoom, keeping the time under `anchorClientX` where it is.
+ *
+ * Without the anchor the view jumps to wherever scrollLeft happened to be, and
+ * zooming toward a specific bar becomes a game of chase-the-scrollbar.
+ */
+export function setWaveZoomLevel(next, anchorClientX = null) {
+  const clamped = Math.min(WAVE_ZOOM_MAX, Math.max(WAVE_ZOOM_MIN, next));
+  if (Math.abs(clamped - waveZoom) < 1e-4) return false;
+  // Which content pixel the anchor is on, before anything moves.
+  const rect = waveScroll?.getBoundingClientRect();
+  const offsetX = anchorClientX !== null && rect
+    ? Math.min(rect.width, Math.max(0, anchorClientX - rect.left))
+    : (waveScroll ? waveScroll.clientWidth / 2 : 0);
+  const contentX = (waveScroll?.scrollLeft ?? 0) + offsetX;
+  // Measured, not derived from the zoom ratio. WAVE_MIN_WIDTH floors the
+  // content width, so on a window narrower than 720px a zoom step can widen the
+  // content by less than its own factor -- or not at all -- and scaling by the
+  // ratio would slide the anchor out from under the pointer.
+  const beforeWidth = waveCanvas?.getBoundingClientRect().width || 0;
+
+  setWaveZoom(clamped);
+  applyWaveZoom();
+  const afterWidth = waveCanvas?.getBoundingClientRect().width || beforeWidth;
+  const growth = beforeWidth > 0 ? afterWidth / beforeWidth : 1;
+  // Everything positioned against the timeline is laid out again at the new
+  // width: the ruler because its ticks are now the wrong distance apart for the
+  // detail on screen, the playhead and the loop region because buildRuler
+  // rebuilds the elements they live in.
+  buildRuler(totalDuration);
+  // buildRuler re-creates the marker element, so it comes back at 0. Put it
+  // back where the transport actually is -- but only if something can say;
+  // defaulting to 0 would yank the playhead to the start of the track.
+  const now = (audioEngine ?? multitrack)?.getCurrentTime?.();
+  if (typeof now === "number") updatePlayheadMarker(now);
+  updateLoopRegionVisual();
+
+  if (waveScroll) {
+    // The same content pixel after the widening, minus where it sits in the
+    // viewport, is the scroll offset that leaves it under the pointer.
+    const target = contentX * growth - offsetX;
+    waveScroll.scrollLeft = Math.max(0, target);
+    syncRulerScroll();
+  }
+  return true;
+}
+
+export function resetWaveZoom() {
+  return setWaveZoomLevel(WAVE_ZOOM_MIN);
 }
 
 function wireZoomButtons() {
@@ -520,17 +617,48 @@ function wireZoomButtons() {
     const ro = new ResizeObserver(() => {
       if (!multitrack || totalDuration <= 0) return;
       if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => { rafId = null; applyWaveZoom(); });
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        applyWaveZoom();
+        // Tick spacing is chosen from the content width, so a resize can leave
+        // the ruler at the density the old width called for. Rebuild only when
+        // the step it would pick has actually changed: buildRuler writes inside
+        // the observed element, so rebuilding every time would feed the
+        // observer its own output.
+        const next = tickStep(totalDuration, rulerTime?.getBoundingClientRect().width || 0);
+        if (next !== _rulerStep) {
+          buildRuler(totalDuration);
+          updateLoopRegionVisual();
+        }
+      });
     });
     ro.observe(waveScroll);
   }
   if (waveScroll) {
     waveScroll.addEventListener("wheel", (e) => {
-      if (waveScroll.scrollWidth <= waveScroll.clientWidth) return;
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      if (totalDuration <= 0) return;
+      // Shift is the pan gesture, and a trackpad's horizontal axis reports as
+      // deltaX with no modifier. Both mean "move along the track", so neither
+      // should change the zoom.
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        if (waveScroll.scrollWidth <= waveScroll.clientWidth) return;
         e.preventDefault();
-        waveScroll.scrollLeft += e.deltaY;
+        // Whichever axis the gesture actually carried. Shift-wheel puts it on
+        // deltaY, a trackpad swipe on deltaX, and shift plus a swipe on deltaX
+        // with deltaY at zero.
+        waveScroll.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        syncRulerScroll();
+        return;
       }
+      if (!e.deltaY) return;
+      // deltaMode 1 is lines and 2 is pages; both deliver far smaller numbers
+      // than pixels, so normalise to notches rather than scaling by deltaY.
+      const notches = Math.max(1, Math.min(3, Math.round(Math.abs(e.deltaY) / 100) || 1));
+      const factor = WAVE_ZOOM_STEP ** (e.deltaY < 0 ? notches : -notches);
+      const changed = setWaveZoomLevel(waveZoom * factor, e.clientX);
+      // Only swallow the event when it did something. At either end of the
+      // range the page should still get its scroll rather than feel dead.
+      if (changed) e.preventDefault();
     }, { passive: false });
     waveScroll.addEventListener("scroll", syncRulerScroll, { passive: true });
   }

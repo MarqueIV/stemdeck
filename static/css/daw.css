@@ -2053,6 +2053,7 @@ input, textarea { font-family: inherit; }
 
 .loop-region.hidden { display: none !important; }
 
+
 /* Wave loading overlay */
 .wave-loading-overlay {
   position: absolute; inset: 0; z-index: 10;

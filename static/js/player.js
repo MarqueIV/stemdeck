@@ -22,7 +22,7 @@ import {
   setLoopEnabled, setLoopStart, setLoopEnd, setMasterVolume,
   waveScroll, selectedStems,
   footerTitle, footerMeta, footerThumb,
-  setFooterWaveDrawFn,
+  setFooterWaveDrawFn, setOverviewRerenderFn,
   metronome, setMetronome, metronomeEnabled, metronomeVolume, metronomeBeatsPerBar,
   exportClickEl, exportClickWrap, exportCountInEl, exportCountInWrap,
   setMetronomeHasBars,
@@ -42,7 +42,8 @@ import {
 } from "./mixer.js";
 import {
   buildRuler, updatePlayheadMarker, updateLoopRegionVisual,
-  applyWaveZoom, buildPresenceRuler, buildFooterWaveTicks, updateFooterTimes,
+  applyWaveZoom, resetWaveZoom, WAVE_ZOOM_MAX,
+  buildPresenceRuler, buildFooterWaveTicks, updateFooterTimes,
   updatePresencePlayhead, resetSpeed, resetPitch, updatePitchAvailability,
   updateMetronomeAvailability, applyMetronomeAccent,
 } from "./transport.js";
@@ -433,7 +434,21 @@ function overviewLaneNames(stems) {
   return present.has("original") ? ["original", ...order] : order;
 }
 
+// What the overview bars were last drawn from, so a zoom change can redraw them
+// at the new resolution without reloading the track. Zoom widens .waves-column,
+// overviewBarCount() reads that width, and the bars come back the same 3px wide
+// with more of them -- redrawing is what keeps the art identical, where
+// stretching the same SVG would smear it.
+let _overviewSource = null;
+
+function rerenderOverviewWaveforms() {
+  if (!_overviewSource) return;
+  renderAllOverviewWaveformsFromPeaks(_overviewSource.stems, _overviewSource.data);
+}
+setOverviewRerenderFn(rerenderOverviewWaveforms);
+
 function renderAllOverviewWaveformsFromPeaks(stems, peaksData) {
+  _overviewSource = { stems, data: peaksData };
   const laneNames = overviewLaneNames(stems);
   // Only the extracted/selected stems (plus original) get a waveform, even if
   // peaks.json carries data for stems the user didn't keep (Demucs separates
@@ -464,23 +479,19 @@ function renderAllOverviewWaveformsFromPeaks(stems, peaksData) {
 // fill its row regardless of how loud the stem actually was.
 function renderAllOverviewWaveforms(stems, decodedMap) {
   const laneNames = overviewLaneNames(stems);
-  const peaksByStem = new Map();
-  let globalMax = 0;
+  const peaksByStem = {};
   for (const name of laneNames) {
     const buf = decodedMap.get(name);
     if (!isAudioBufferLike(buf)) continue;
-    const peaks = bufferMinMaxPeaks(buf, OVERVIEW_WAVE_POINTS);
-    peaksByStem.set(name, peaks);
-    for (const [mn, mx] of peaks) {
-      if (mx > globalMax) globalMax = mx;
-      if (-mn > globalMax) globalMax = -mn;
-    }
+    // Scanned once per track, at the finest resolution any zoom will ask for.
+    // bufferMinMaxPeaks walks every sample, so doing this per zoom step would
+    // re-read the whole song per stem on each wheel notch. The bars are
+    // downsampled from this cache instead, which is what peaks.json already is
+    // -- the two sources are the same shape from here on, they just differ in
+    // how many points they carry.
+    peaksByStem[name] = bufferMinMaxPeaks(buf, OVERVIEW_WAVE_POINTS * WAVE_ZOOM_MAX);
   }
-  const norm = globalMax > 0 ? 1 / globalMax : 0;
-  const bars = overviewBarCount();
-  laneNames.forEach((name, i) => {
-    renderOverviewWaveformPath(name, peaksByStem.get(name), norm, STEM_COLORS[name] || "#a0a0a0", bars, i);
-  });
+  renderAllOverviewWaveformsFromPeaks(stems, peaksByStem);
 }
 
 function renderDecodedStemVisuals(stemName, audioBuffer, color) {
@@ -1019,6 +1030,12 @@ export function wireUpAudio(jobId, stems, duration, thumbnail, mixUrl = null, ti
   setLoopEnd(0);
   loopBtn.classList.remove("active");
   loopRegionEl.classList.add("hidden");
+  // After the loop is cleared, never before: resetWaveZoom redraws the loop
+  // region, so running it first would paint the previous track's loop against
+  // this track's duration for a frame. A new track also starts fitted -- the
+  // previous track's zoom would open this one scrolled into the middle of a
+  // song the user has not seen yet.
+  resetWaveZoom();
   // Refresh loop UI so the exact-loop inputs enable + reset to 00:00.000 now
   // that the track duration is known.
   updateLoopRegionVisual();
