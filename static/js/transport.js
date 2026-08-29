@@ -554,31 +554,6 @@ function wireLaneScrollSync() {
   link(waveScroll, mixer);
 }
 
-// The control clusters wrap when the window is too narrow to hold them side
-// by side, which can leave a divider stranded at the end of a line with
-// nothing after it to separate. Mark those so CSS can hide them.
-//
-// Compares bottom edges, not tops: the row is bottom-aligned, so a divider
-// and the cluster beside it share a baseline but start at different heights.
-function syncFooterDividers() {
-  const row = document.querySelector(".footer-row-controls");
-  if (!row) return;
-  const bottom = (el) => Math.round(el.getBoundingClientRect().bottom);
-  for (const divider of row.querySelectorAll(".footer-divider")) {
-    const next = divider.nextElementSibling;
-    divider.classList.toggle("is-orphan", !next || bottom(next) !== bottom(divider));
-  }
-}
-
-function wireFooterDividers() {
-  const row = document.querySelector(".footer-row-controls");
-  if (!row) return;
-  // Observing the row catches both window resizes and the controls changing
-  // width (a track with a click track has more of them than one without).
-  new ResizeObserver(syncFooterDividers).observe(row);
-  syncFooterDividers();
-}
-
 // ─── Wire transport buttons ───
 
 export function wireTransportButtons() {
@@ -588,7 +563,6 @@ export function wireTransportButtons() {
   loopBtn.addEventListener("click", toggleLoop);
   wireLoopDrag();
   wireLoopInputs();
-  wireFooterDividers();
   wireZoomButtons();
   wireLaneScrollSync();
   masterFader?.addEventListener("input", () => {
