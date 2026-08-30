@@ -42,7 +42,12 @@ input, textarea { font-family: inherit; }
    TOPBAR
    ═══════════════════════════════════ */
 .daw-topbar {
-  height: 77px;
+  /* Was a flat 77px. The panel-toggle row under the composer needs a second
+     line, and auto height means a translation that wraps grows the bar rather
+     than being clipped. */
+  min-height: 77px;
+  padding-top: 10px;
+  padding-bottom: 10px;
   flex-shrink: 0;
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
@@ -1687,6 +1692,80 @@ input, textarea { font-family: inherit; }
   padding: 0 14px;
 }
 
+/* ── Panel toggles (#480) ── */
+/* A second row under the composer, aligned to its right-hand end so it reads as
+   belonging to the two controls above it. Collapse to nothing, not to a stub:
+   the whole point is the height back, and a stub tall enough to hold a control
+   is most of what the smaller panels are worth. That is only possible because
+   the controls live up here, where the way back is always in the same place.
+
+   This row costs the topbar about 19px, against up to 202px it can return. */
+.daw-composer-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.daw-composer-stack > .daw-composer { flex: none; }
+/* Exactly as wide as the two controls above it, and sharing their right edge:
+   the same --composer-action-w they are each sized from, so a longer
+   translation widens all three together instead of leaving this one ragged.
+   margin-left:auto does the alignment, since the stack is the composer's width. */
+.daw-panel-toggles {
+  width: calc(var(--composer-action-w) * 2);
+  margin-left: auto;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 2px 7px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  min-width: 0;
+}
+.daw-panel-toggles-label,
+.daw-panel-toggles-sep {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1;
+  white-space: nowrap;
+}
+.daw-panel-toggle {
+  padding: 2px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-2);
+  font-family: inherit;
+  font-size: 8.5px; font-weight: 600; letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast), background var(--t-fast), opacity var(--t-fast);
+}
+.daw-panel-toggle:hover { background: var(--panel-2); }
+/* Legible means the panel is there, struck through means it is put away. The
+   other way round -- highlighting the hidden ones -- inverts what a pressed
+   toggle normally looks like, and makes the default state the loud one. */
+.daw-panel-toggle[aria-pressed="true"] { color: var(--fg-2); }
+.daw-panel-toggle[aria-pressed="false"] {
+  color: var(--muted);
+  opacity: 0.6;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.app.panel-analysis-off .daw-track-header { display: none; }
+.app.panel-sections-off .daw-section-ribbon { display: none; }
+.app.panel-timeline-off .footer-wave-region { display: none; }
+
 /* ── Waveform header ── */
 .daw-wave-header {
   display: flex;
@@ -1805,9 +1884,17 @@ input, textarea { font-family: inherit; }
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 5px;
+  gap: var(--lane-name-vu-gap, 5px);
   width: 58px;
   flex-shrink: 0;
+  /* Centres the NAME on the row, not the name-and-meter pair. The row centres
+     its children, so a stacked pair puts the name above the centre line by half
+     the meter plus the gap -- and the waveform beside it is centred on that
+     line, so the label reads as sitting too high. A top margin is centred with
+     the item, so this offsets the pair by exactly half of it and the name comes
+     level with its own waveform. Cheap and reversible: the meter simply moves
+     down with it. */
+  margin-top: calc(var(--lane-vu-h, 10px) + var(--lane-name-vu-gap, 5px));
 }
 
 /* Stem icon — hidden per user preference */
@@ -1875,9 +1962,11 @@ input, textarea { font-family: inherit; }
 /* VU meter — sits below stem name in .lane-left-col, spans full column width */
 /* 5px read as a hairline rather than a meter: at that height the gradient had
    nowhere to show and a moving level was hard to see at a glance. */
+/* Height shared with .lane-name-vu's centring offset, so the two cannot drift. */
+:root { --lane-vu-h: 10px; }
 .lane-vu.mx-meter {
   position: relative;
-  height: 10px;
+  height: var(--lane-vu-h, 10px);
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -2045,10 +2134,20 @@ input, textarea { font-family: inherit; }
 .daw.engine-waveforms .stem-waveform-layer {
   display: flex !important;
 }
-/* waves-column must size naturally now that multitrack is in flow */
+/* The column is exactly the stack _applyLaneHeight computed, never whatever the
+   multitrack happens to be. Letting the multitrack size it looks reasonable and
+   is where the misalignment came from: its lane height is fixed when the tracks
+   are created, so after a resize the column keeps the old size while the mixer
+   rows beside it follow the new one, and the two walk apart down the stack.
+   Measured at 1600x768 after a resize from 900: the column stayed 498px against
+   a 432px stack, so waveform rows sat 83px apart against the mixer's 72 and the
+   last pair was 55px out of line.
+
+   The mixer stack is count * --lane-h and this is count * --lane-h, so they
+   agree by construction rather than by coincidence. */
 .daw .waves-column {
-  height: auto !important;
-  min-height: 0 !important;
+  height: var(--wave-widget-track-stack-h, auto) !important;
+  min-height: var(--wave-widget-track-stack-h, 0) !important;
 }
 
 .loop-region.hidden { display: none !important; }

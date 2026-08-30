@@ -22,7 +22,7 @@ import {
   setLoopEnabled, setLoopStart, setLoopEnd, setMasterVolume,
   waveScroll, selectedStems,
   footerTitle, footerMeta, footerThumb,
-  setFooterWaveDrawFn, setOverviewRerenderFn,
+  setFooterWaveDrawFn, setOverviewRerenderFn, autoSectionsResetFn,
   metronome, setMetronome, metronomeEnabled, metronomeVolume, metronomeBeatsPerBar,
   exportClickEl, exportClickWrap, exportCountInEl, exportCountInWrap,
   setMetronomeHasBars,
@@ -976,19 +976,59 @@ export function buildStripStems() {
   }
 }
 
+// The lane count the panel is currently laid out for, and the observer that
+// re-fits it. _applyLaneHeight divides the wave panel's height between the
+// lanes, so it has to run again whenever that height changes -- which it now
+// does on demand, because collapsing a panel (#480) hands its height straight
+// to this one. Without this the lanes keep the size they were given at load and
+// the reclaimed space becomes a gap under them: 141px of it with all three
+// panels collapsed.
+let _laneCount = 0;
+let _laneFitObs = null;
+
+function _watchLaneFit(count) {
+  _laneCount = count;
+  _laneFitObs?.disconnect();
+  const panel = document.querySelector(".daw-wave-panel");
+  if (!panel) return;
+  // The panel is flex: 1 inside a fixed-height column, so its own height comes
+  // from its parent and never from the lanes. Writing lane heights from here
+  // cannot feed the observer its own output.
+  _laneFitObs = new ResizeObserver(() => {
+    // Only where the SVG overlay is the visible waveform. On the streaming path
+    // the lanes are WaveSurfer canvases sized when the tracks are created, and
+    // setOptions only re-renders the ones that have audio: a lane for a stem
+    // the user did not extract keeps its old height and the two columns drift
+    // apart. Measured on a six-lane job with two empty: 93, 93, 93, 70, 70, 93
+    // against mixer rows all at 95. Leaving that path at its load-time height
+    // costs it the reclaimed space and keeps it aligned, which is the better
+    // trade for an opt-out path.
+    if (!document.querySelector(".app")?.classList.contains("engine-waveforms")) return;
+    if (_laneCount > 0) _applyLaneHeight(_laneCount);
+  });
+  _laneFitObs.observe(panel);
+}
+
 function _applyLaneHeight(count) {
   const wavePanel = document.querySelector(".daw-wave-panel");
   const panelH = wavePanel?.clientHeight ?? 0;
-  const laneH = panelH > 0 && count > 0
-    ? Math.max(WAVEFORM_LANE_HEIGHT, Math.floor(panelH / count))
-    : WAVEFORM_LANE_HEIGHT;
+  // One row is a lane plus its separator, and BOTH columns have to agree on
+  // that number or they drift apart down the stack. They did: every mixer row
+  // draws its own 2px bottom border, so the mixer stack was count * (lane + 2),
+  // while the waveform column was told count * lane + (count - 1) * 2 -- one
+  // separator short. Two pixels over six lanes, which is why a stem name and
+  // its waveform ended up on different lines by the bottom of the mixer.
+  //
+  // So the row is the unit. Divide the panel by the row count, and give the
+  // mixer and the waveform column exactly the same total.
+  const rowH = panelH > 0 && count > 0
+    ? Math.max(WAVEFORM_LANE_HEIGHT + WAVEFORM_SEPARATOR_HEIGHT, Math.floor(panelH / count))
+    : WAVEFORM_LANE_HEIGHT + WAVEFORM_SEPARATOR_HEIGHT;
   const appEl = document.querySelector(".app");
-  appEl?.style.setProperty("--lane-h", `${laneH + 2}px`);
-  appEl?.style.setProperty(
-    "--wave-widget-track-stack-h",
-    `${count * laneH + (count - 1) * WAVEFORM_SEPARATOR_HEIGHT}px`,
-  );
-  return laneH;
+  appEl?.style.setProperty("--lane-h", `${rowH}px`);
+  appEl?.style.setProperty("--wave-widget-track-stack-h", `${count * rowH}px`);
+  // The drawable height inside a row, which is what the multitrack is given.
+  return rowH - WAVEFORM_SEPARATOR_HEIGHT;
 }
 
 export function wireUpAudio(jobId, stems, duration, thumbnail, mixUrl = null, title = "", peaksPromise = null, hasVideo = false, videoStatus = null) {
@@ -1030,6 +1070,10 @@ export function wireUpAudio(jobId, stems, duration, thumbnail, mixUrl = null, ti
   setLoopEnd(0);
   loopBtn.classList.remove("active");
   loopRegionEl.classList.add("hidden");
+  // Loading a song is the end of whatever the structure toggle was asked to do
+  // for the last one. It costs minutes of CPU per import, so it goes back to
+  // off rather than quietly staying on for the next track.
+  autoSectionsResetFn?.();
   // After the loop is cleared, never before: resetWaveZoom redraws the loop
   // region, so running it first would paint the previous track's loop against
   // this track's duration for a frame. A new track also starts fitted -- the
@@ -1171,6 +1215,7 @@ export function wireUpAudio(jobId, stems, duration, thumbnail, mixUrl = null, ti
   }
 
   const laneH = _applyLaneHeight(orderedNames.length);
+  _watchLaneFit(orderedNames.length);
 
   const mt = Multitrack.create(
     orderedNames.map((name, i) => ({
