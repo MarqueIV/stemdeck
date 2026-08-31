@@ -10,6 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
+from app.core.process import arm_parent_watchdog
 from app.pipeline.section_refine import refine_segments
 
 _HEARTBEAT_SECONDS = 10
@@ -66,6 +67,9 @@ def _load_beat_grid(path: Path | None) -> object | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Without this a CPU inference pass outlives the parent whose
+    # TIMEOUT_SECTIONS was its only bound (#519).
+    arm_parent_watchdog()
     args = _parser().parse_args(argv)
     for path in (args.stems_dir / f"{name}.wav" for name in ("bass", "drums", "other", "vocals")):
         if not path.is_file():

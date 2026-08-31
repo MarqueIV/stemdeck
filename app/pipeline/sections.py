@@ -214,6 +214,10 @@ def _terminate(proc: subprocess.Popen) -> None:
 def _run_registered_process(job: Job, cmd: list[str]) -> tuple[int, list[str], list[str]]:
     """Run a child with cancellation, total timeout, and output-stall detection."""
     env = os.environ.copy()
+    # The worker arms a watchdog on this and hard-exits when we disappear, so a
+    # kill that runs no cleanup (SIGKILL, Force Quit, Task Manager, a crash)
+    # cannot leave it running with nobody to collect the result (#519).
+    env["STEMDECK_PARENT_PID"] = str(os.getpid())
     env["PYTHONIOENCODING"] = "utf-8:replace"
     proc = subprocess.Popen(
         cmd,

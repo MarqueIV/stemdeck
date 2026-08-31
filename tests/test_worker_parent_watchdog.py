@@ -45,8 +45,8 @@ def test_worker_exits_when_its_parent_disappears(tmp_path):
     script = textwrap.dedent(
         """
         import sys, time
-        from app.pipeline.demucs_worker import _arm_parent_watchdog
-        _arm_parent_watchdog()
+        from app.core.process import arm_parent_watchdog
+        arm_parent_watchdog()
         # Busy the way a separation is busy: never reading stdin, so only the
         # watchdog can end this process.
         while True:
@@ -83,18 +83,20 @@ def test_worker_exits_when_its_parent_disappears(tmp_path):
 def test_worker_ignores_an_unset_or_bogus_parent_pid(monkeypatch):
     """A worker run by hand (no STEMDECK_PARENT_PID) must not arm the watchdog
     and shoot itself."""
-    from app.pipeline import demucs_worker
+    import threading as _threading
+
+    from app.core import process as _process_mod
 
     started: list[object] = []
     monkeypatch.setattr(
-        demucs_worker.threading,
+        _threading,
         "Thread",
         lambda *a, **k: started.append((a, k)) or _NoopThread(),
     )
 
     for value in ("", "   ", "not-a-number", "0", "-5", str(os.getpid())):
         monkeypatch.setenv("STEMDECK_PARENT_PID", value)
-        demucs_worker._arm_parent_watchdog()
+        _process_mod.arm_parent_watchdog()
     assert started == [], "watchdog armed on a pid it should have ignored"
 
 
