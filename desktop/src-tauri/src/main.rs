@@ -111,6 +111,24 @@ const SHAKA_FFPROBE_SHA256_X64: &str =
 #[cfg(all(unix, not(target_os = "macos")))]
 const DEFAULT_LINUX_FFMPEG_URL: &str =
     "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+// Pinned like the macOS hashes above, because this binary is downloaded,
+// marked executable and run: without it the only thing standing between a
+// compromised or MITM'd host and code execution was that the download
+// completed (#518).
+//
+// Upstream publishes only a .md5 companion, which is both cryptographically
+// broken for collisions and served by the same host as the tarball -- an
+// attacker able to replace one can replace the other, so it evidences
+// corruption, not authenticity. This hash was computed from the artifact whose
+// MD5 matched upstream's published 7fa72b652e19bf84c9461e332ea1cdf3.
+//
+// The URL is a rolling one, so this needs a manual bump when upstream
+// publishes a new build (the current one is dated 2024-08-24). A stale pin
+// fails closed with a checksum error rather than silently accepting whatever
+// arrives; STEMDECK_FFMPEG_URL still overrides both, for anyone who needs it.
+#[cfg(all(unix, not(target_os = "macos")))]
+const DEFAULT_LINUX_FFMPEG_SHA256: &str =
+    "abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67";
 
 struct BackendHandles {
     child: Child,
@@ -3814,6 +3832,11 @@ fn download_linux_ffmpeg(data_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("failed to create {}: {e}", downloads.display()))?;
     let archive = downloads.join("ffmpeg-linux.tar.xz");
     download_file(&url, &archive, Duration::from_secs(30 * 60), "FFmpeg")?;
+    // Only the pinned artifact is trusted. An override points somewhere we
+    // cannot have a hash for, so it is the caller's business to vouch for it.
+    if env_path_override("STEMDECK_FFMPEG_URL").is_none() {
+        verify_pinned_sha256(&archive, Some(DEFAULT_LINUX_FFMPEG_SHA256), "FFmpeg")?;
+    }
 
     // Extract with the system tar (xz support is standard on desktop Linux). The
     // static build unpacks to a single ffmpeg-<ver>-amd64-static/ directory.
