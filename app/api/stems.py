@@ -289,7 +289,10 @@ def _click_lane(
                 return None
             if rendered is None:
                 return None
-        _prune_mixdown_cache(_CLICK_CACHE_DIR)
+        # keep=path or a render larger than the cache budget evicts itself the
+        # instant it is written, and ffmpeg is then handed a missing -i (#512).
+        # Same reason the mixdown path passes keep= (#482).
+        _prune_mixdown_cache(_CLICK_CACHE_DIR, keep=path)
         return _ClickLane(path, g, lead_in, True)
 
     if not path.is_file():
@@ -308,8 +311,35 @@ def _click_lane(
             return None
         if rendered is None:
             return None
-    _prune_mixdown_cache(_CLICK_CACHE_DIR)
+    _prune_mixdown_cache(_CLICK_CACHE_DIR, keep=path)
     return _ClickLane(path, g, 0.0, False)
+
+
+# A trim range is only ever meaningful inside the track. Without a ceiling,
+# `end` is an unbounded float that reaches
+# np.zeros(int(round(duration * sample_rate))) in the click renderer -- so
+# ?start=0&end=20000&count_in=1 asks for a 7 GB allocation, and a larger value
+# raises MemoryError inside a blanket except and silently drops the click
+# (#512). The job's own duration is the honest ceiling; MAX_TRIM_SECONDS is the
+# backstop for a job whose duration was never recorded.
+MAX_TRIM_SECONDS = 6 * 60 * 60
+
+
+def _validate_trim_range(job_id: str, start: float | None, end: float | None) -> None:
+    """Reject a trim range that is not inside the track."""
+    if start is None or end is None:
+        return
+    job = registry_get(job_id)
+    duration = getattr(job, "duration_sec", None) if job is not None else None
+    ceiling = float(duration) if duration else float(MAX_TRIM_SECONDS)
+    # A little slack over the recorded duration: it comes from ffprobe and can
+    # sit a hair under the decoded length, and the UI legitimately asks for the
+    # very end of a track.
+    if end > ceiling + 1.0:
+        raise HTTPException(
+            status_code=422,
+            detail="end is beyond the end of the track",
+        )
 
 
 def _read_beat_grid(job_id: str) -> dict | None:
@@ -439,7 +469,7 @@ async def _stream_ffmpeg(cmd: list[str], context: str = "", cache_path: Path | N
         if tmp_path is not None:
             if finished and proc.returncode == 0:
                 os.replace(tmp_path, cache_path)
-                _prune_mixdown_cache(cache_path.parent)
+                _prune_mixdown_cache(cache_path.parent, keep=cache_path)
             else:
                 tmp_path.unlink(missing_ok=True)
 
@@ -655,6 +685,7 @@ async def get_stem(
             status_code=422,
             detail="start and end are both required and start must be less than end",
         )
+    _validate_trim_range(job_id, start, end)
 
     cmd = [
         ffmpeg_executable(),
@@ -701,6 +732,7 @@ async def get_stem_mp3(
             status_code=422,
             detail="start and end are both required and start must be less than end",
         )
+    _validate_trim_range(job_id, start, end)
 
     # Full-stem requests (no trim) are cached to disk so repeat loads — the
     # common case for the mobile player — are instant instead of re-encoding.
@@ -799,6 +831,7 @@ async def get_mixdown(
             status_code=422,
             detail="start and end are both required and start must be less than end",
         )
+    _validate_trim_range(job_id, start, end)
 
     # Validates job_id (404), job done (404), and path traversal (404) per
     # stem -- deliberately before the cache lookup below, so a deleted or
@@ -807,7 +840,8 @@ async def get_mixdown(
     paths = [_validate_stem_path(job_id, name) for name in names]
 
     media_type = MIXDOWN_MEDIA_TYPES[ext]
-    click_lane = _click_lane(
+    click_lane = await asyncio.to_thread(
+        _click_lane,
         job_id,
         click,
         click_mult,
@@ -958,7 +992,9 @@ async def get_video_mixdown(
 
     # Click is one more audio input. It must be appended before the video input
     # so the audio indices the filter graph references stay contiguous from 0.
-    click_lane = _click_lane(job_id, click, click_mult, click_accent, click_gain)
+    click_lane = await asyncio.to_thread(
+        _click_lane, job_id, click, click_mult, click_accent, click_gain
+    )
     if click_lane is not None:
         paths = [*paths, click_lane[0]]
         parsed_gains = [*parsed_gains, click_lane[1]]
