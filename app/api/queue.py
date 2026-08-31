@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.events import _MAX_SSE_SECONDS, claim_sse_slot, release_sse_slot
+from app.api.events import _MAX_SSE_SECONDS, SseSlot
 from app.core.config import JOB_ID_RE, JOBS_DIR, MAX_PENDING_UPLOAD_JOBS, MAX_PENDING_URL_JOBS
 from app.core.registry import get as registry_get
 from app.core.registry import pending_count as registry_pending_count
@@ -130,7 +130,7 @@ async def queue_events() -> StreamingResponse:
     outlives any individual job and is expected to stay open for the session,
     so only the 4 h ceiling ends it.
     """
-    claim_sse_slot()
+    slot = SseSlot()
 
     async def stream() -> AsyncIterator[str]:
         try:
@@ -156,7 +156,7 @@ async def queue_events() -> StreamingResponse:
                     keepalive_at = 0
                 await asyncio.sleep(0.25)
         finally:
-            release_sse_slot()
+            slot.release()
 
     return StreamingResponse(
         stream(),

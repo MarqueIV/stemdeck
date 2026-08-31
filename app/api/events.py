@@ -38,6 +38,45 @@ def release_sse_slot() -> None:
     _sse_active -= 1
 
 
+class SseSlot:
+    """One held connection slot, released exactly once.
+
+    Claiming has to happen in the handler so that hitting the cap can still be
+    answered with a 503 -- once the generator is running the response headers
+    have gone out and there is no status code left to send.
+
+    That is what leaked slots: release lives in the stream's `finally`, and an
+    async generator that is never started never runs its `finally`. If the
+    client disconnects before the body begins, StreamingResponse raises inside
+    `stream_response` on its first `send()` -- before `__anext__` is ever
+    called -- so the generator body never executes and the slot was held
+    forever. 200 of those and every progress stream 503s with nothing actually
+    connected, until the process restarts (#513).
+
+    The stream releases on its way out as before; `__del__` is the backstop for
+    the never-started case, where collecting the generator collects the closure
+    holding this. Release is idempotent so the two cannot double-count.
+    """
+
+    __slots__ = ("_held",)
+
+    def __init__(self) -> None:
+        # Set first: claim_sse_slot raises at the cap, and __del__ still runs on
+        # a half-built object. Without this it would raise AttributeError from
+        # __del__ instead of releasing nothing.
+        self._held = False
+        claim_sse_slot()  # may raise 503; nothing is held if it does
+        self._held = True
+
+    def release(self) -> None:
+        if self._held:
+            self._held = False
+            release_sse_slot()
+
+    def __del__(self) -> None:
+        self.release()
+
+
 @router.get("/jobs/{job_id}/events")
 async def job_events(job_id: str) -> StreamingResponse:
     """Server-Sent Events stream of job state updates. Closes when the job
@@ -47,7 +86,7 @@ async def job_events(job_id: str) -> StreamingResponse:
     job = registry_get(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
-    claim_sse_slot()
+    slot = SseSlot()
 
     async def stream() -> AsyncIterator[str]:
         try:
@@ -82,7 +121,7 @@ async def job_events(job_id: str) -> StreamingResponse:
                     keepalive_at = 0
                 await asyncio.sleep(0.2)
         finally:
-            release_sse_slot()
+            slot.release()
 
     return StreamingResponse(
         stream(),
