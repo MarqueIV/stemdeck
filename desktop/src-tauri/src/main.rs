@@ -16,7 +16,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tar::Archive;
+use tar::{Archive, EntryType};
 use tauri::{Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 #[cfg(windows)]
@@ -3187,13 +3187,34 @@ fn is_apple_double(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with("._"))
 }
 
+/// Stands in for `Archive::unpack`, which cannot be used because it offers no
+/// way to skip an entry. It has to reproduce the two things `unpack` does
+/// beyond looping over entries, both of which the first version of this
+/// function dropped:
+///
+/// 1. **Directories are applied last**, reverse-sorted by path, because a
+///    directory carries its own mode. Created inline in archive order, a
+///    `0o555` member exists before its contents are written and the next file
+///    inside it fails with EACCES -- first-run setup dies with no fallback.
+///    Upstream calls this out as tar-rs#242.
+/// 2. **`destination` is canonicalized up front**, which on Windows supplies
+///    the `\\?\` prefix so member paths over 260 characters still extract.
+///
+/// Traversal protection needs nothing here: `unpack_in` rejects `ParentDir`
+/// components, strips `RootDir`/`Prefix`, and canonicalizes against `dst` on
+/// every entry, so zip-slip, absolute members and symlink escapes stay blocked.
 fn unpack_without_apple_double<R: Read>(
     mut archive: Archive<R>,
     destination: &Path,
 ) -> Result<(), String> {
+    let destination = destination
+        .canonicalize()
+        .unwrap_or_else(|_| destination.to_path_buf());
+
     let entries = archive
         .entries()
         .map_err(|e| format!("failed to read runtime pack: {e}"))?;
+    let mut directories = Vec::new();
     for entry in entries {
         let mut entry = entry.map_err(|e| format!("failed to read runtime pack: {e}"))?;
         let path = entry
@@ -3203,8 +3224,20 @@ fn unpack_without_apple_double<R: Read>(
         if is_apple_double(&path) {
             continue;
         }
+        // Directories hold no data, so deferring them reads nothing back off a
+        // streaming archive -- only their metadata is applied later.
+        if entry.header().entry_type() == EntryType::Directory {
+            directories.push(entry);
+            continue;
+        }
         entry
-            .unpack_in(destination)
+            .unpack_in(&destination)
+            .map_err(|e| format!("failed to extract runtime pack: {e}"))?;
+    }
+
+    directories.sort_by(|a, b| b.path_bytes().cmp(&a.path_bytes()));
+    for mut dir in directories {
+        dir.unpack_in(&destination)
             .map_err(|e| format!("failed to extract runtime pack: {e}"))?;
     }
     Ok(())
@@ -4475,6 +4508,62 @@ mod tests {
             !unpacked.join("._seaborn-v0_8-bright.mplstyle").exists(),
             "AppleDouble sidecar must not be written to disk"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extract_tar_archive_survives_a_read_only_directory_member() {
+        // tar::Archive::unpack applies directory entries last, reverse-sorted,
+        // so a directory's own mode cannot stop its children being written
+        // (tar-rs#242). The first version of unpack_without_apple_double
+        // created them inline in archive order, which turns a 0o555 member into
+        // a hard extraction failure and a dead first-run setup (#508).
+        use std::os::unix::fs::PermissionsExt;
+
+        let archive_dir = make_tmp();
+        let archive = archive_dir.path().join("runtime.tar.zst");
+        let encoder = zstd::Encoder::new(fs::File::create(&archive).unwrap(), 0).unwrap();
+        let mut builder = tar::Builder::new(encoder);
+
+        // Directory first, file second -- the order that broke.
+        let mut dir_header = tar::Header::new_gnu();
+        dir_header.set_entry_type(tar::EntryType::Directory);
+        dir_header.set_mode(0o555);
+        dir_header.set_size(0);
+        builder
+            .append_data(&mut dir_header, "runtime/locked/", std::io::empty())
+            .unwrap();
+
+        let body = b"axes.grid: True";
+        let mut file_header = tar::Header::new_gnu();
+        file_header.set_entry_type(tar::EntryType::Regular);
+        file_header.set_mode(0o644);
+        file_header.set_size(body.len() as u64);
+        builder
+            .append_data(&mut file_header, "runtime/locked/style.mplstyle", &body[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let destination = make_tmp();
+        super::extract_tar_archive(&archive, destination.path()).unwrap();
+
+        let written = destination.path().join("runtime/locked/style.mplstyle");
+        assert!(
+            written.is_file(),
+            "a file inside a read-only directory member must still extract"
+        );
+        let mode = fs::metadata(destination.path().join("runtime/locked"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o555, "the directory keeps its archived mode");
+
+        // Leave it writable so TempDir cleanup can remove it.
+        fs::set_permissions(
+            destination.path().join("runtime/locked"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
     }
 
     #[test]
