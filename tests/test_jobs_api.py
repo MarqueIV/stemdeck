@@ -386,15 +386,15 @@ def test_oversized_editor_body_is_refused_before_it_is_parsed(client, done_job):
     check from 32 ms to 5219 ms, and 16 ms once Content-Length was checked in
     middleware first (#481).
     """
-    from app.main import _EDITOR_BODY_LIMIT
+    from app.main import _JSON_BODY_LIMIT
 
     padded = dict(_section(0), name="V" * 64)
-    count = (_EDITOR_BODY_LIMIT // len(json.dumps(padded, separators=(",", ":")))) + 500
+    count = (_JSON_BODY_LIMIT // len(json.dumps(padded, separators=(",", ":")))) + 500
     payload = {"sections": [dict(padded, id=f"sec{i}") for i in range(count)]}
     # Sent as the exact bytes measured, so the assertion cannot drift from what
     # actually goes on the wire and quietly stop testing the ceiling.
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    assert len(raw) > _EDITOR_BODY_LIMIT
+    assert len(raw) > _JSON_BODY_LIMIT
 
     r = client.patch(
         f"/api/jobs/{done_job.id}/sections",
@@ -410,7 +410,7 @@ def test_the_body_ceiling_clears_the_largest_legitimate_editor_payload(client, d
     """The ceiling must never be reachable by a real track. 10000 sections at
     the longest permitted name is about 1.6 MB against a 4 MB ceiling."""
     import app.api.jobs as jobs_mod
-    from app.main import _EDITOR_BODY_LIMIT
+    from app.main import _JSON_BODY_LIMIT
 
     payload = {
         "sections": [
@@ -418,7 +418,7 @@ def test_the_body_ceiling_clears_the_largest_legitimate_editor_payload(client, d
         ]
     }
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    assert len(raw) < _EDITOR_BODY_LIMIT
+    assert len(raw) < _JSON_BODY_LIMIT
 
     r = client.patch(
         f"/api/jobs/{done_job.id}/sections",
