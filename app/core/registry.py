@@ -175,21 +175,33 @@ def restore(jobs_dir: Path) -> None:
             _pending_resume.extend(
                 j.id for j in sorted(resume, key=lambda j: (j.queue_position, j.created_at))
             )
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        except Exception:
+            # Broad on purpose. restore() runs at import time, so anything that
+            # escapes here stops the backend booting with no way for a user to
+            # recover short of deleting the file by hand. A registry.json that
+            # is valid JSON but not an object (a top-level list, null, a bare
+            # string) used to do exactly that: _migrate calls data.get() and
+            # raises AttributeError, which the old tuple did not name (#520).
             logger.warning("failed to load registry from %s", path, exc_info=True)
 
-    with _lock:
-        known = set(_jobs)
-    for job_dir in jobs_dir.iterdir():
-        if not job_dir.is_dir() or not JOB_ID_RE.match(job_dir.name) or job_dir.name in known:
-            continue
-        recovered = _recover_done_job(job_dir)
-        if recovered is not None:
-            with _lock:
-                _jobs[recovered.id] = recovered
-            changed = True
-    if changed:
-        persist(jobs_dir)
+    # Orphan recovery, and the persist that follows it, were outside the guard
+    # above -- an unreadable jobs_dir or a failed write was fatal at startup for
+    # the same reason.
+    try:
+        with _lock:
+            known = set(_jobs)
+        for job_dir in jobs_dir.iterdir():
+            if not job_dir.is_dir() or not JOB_ID_RE.match(job_dir.name) or job_dir.name in known:
+                continue
+            recovered = _recover_done_job(job_dir)
+            if recovered is not None:
+                with _lock:
+                    _jobs[recovered.id] = recovered
+                changed = True
+        if changed:
+            persist(jobs_dir)
+    except Exception:
+        logger.warning("failed to recover jobs from %s", jobs_dir, exc_info=True)
 
 
 def _resume_or_recover(job: Job, job_dir: Path) -> Job | None:
