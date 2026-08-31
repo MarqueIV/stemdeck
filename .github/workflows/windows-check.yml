@@ -27,6 +27,15 @@ concurrency:
 
 jobs:
   check:
+    # Never run a fork's code on the self-hosted runner -- see the same guard in
+    # macos-check.yml. cargo build/clippy/test execute whatever the PR supplies
+    # (build.rs, proc-macro crates, a swapped Cargo.toml dependency, the test
+    # bodies), nothing here cleans the workspace, and this runner also builds
+    # the Windows release. Fork PRs get a maintainer-triggered
+    # workflow_dispatch run instead.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     # Runner must have rustup and the MSVC toolchain (same requirements as
     # windows-release.yml, which this intentionally does not replace -- this
     # only builds/checks, never packages or uploads anything).
