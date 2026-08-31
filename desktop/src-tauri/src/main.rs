@@ -4410,34 +4410,65 @@ fn update_setup_config<const N: usize>(
 /// Polls an already-spawned child until it exits or the timeout elapses.
 /// Mirrors command_output_with_timeout but accepts a pre-spawned Child so the
 /// caller can record the PID before waiting (e.g. to kill on window close).
+/// Wait for `child`, draining its pipes while it runs.
+///
+/// The draining is the point. Reading only after `try_wait()` reports an exit
+/// deadlocks any child that outruns the OS pipe buffer: it blocks in `write()`
+/// with nobody reading, so it never exits, so `try_wait()` never reports an
+/// exit, and the whole thing ends at the timeout instead. `warmup_models`
+/// pipes both streams and its model downloads emit tqdm progress to stderr in
+/// proportion to how long they take -- so the failure lands on slow
+/// connections, the users warmup exists to help (#516).
+///
+/// Each stream gets its own thread because both must drain concurrently;
+/// draining one and then the other reintroduces the deadlock on whichever is
+/// second.
 fn child_output_with_timeout(
     mut child: Child,
     timeout: Duration,
     label: &str,
 ) -> Result<Output, String> {
+    let stdout_reader = child.stdout.take().map(|mut pipe| {
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    });
+    let stderr_reader = child.stderr.take().map(|mut pipe| {
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    });
+
+    let collect = |reader: Option<thread::JoinHandle<Vec<u8>>>| {
+        reader.and_then(|h| h.join().ok()).unwrap_or_default()
+    };
+
     let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child
             .try_wait()
             .map_err(|e| format!("failed to wait for {label}: {e}"))?
         {
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let _ = pipe.read_to_end(&mut stdout);
-            }
-            let mut stderr = Vec::new();
-            if let Some(mut pipe) = child.stderr.take() {
-                let _ = pipe.read_to_end(&mut stderr);
-            }
+            // The child is gone, so both pipes are at EOF and these joins
+            // return promptly.
             return Ok(Output {
                 status,
-                stdout,
-                stderr,
+                stdout: collect(stdout_reader),
+                stderr: collect(stderr_reader),
             });
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
+            // Joined rather than detached: killing the child closes its ends,
+            // so the readers finish, and dropping the handles without joining
+            // would leak two threads per timeout.
+            let _ = collect(stdout_reader);
+            let _ = collect(stderr_reader);
             return Err(format!(
                 "{label} timed out after {} seconds",
                 timeout.as_secs()
@@ -4452,44 +4483,12 @@ fn command_output_with_timeout(
     timeout: Duration,
     label: &str,
 ) -> Result<Output, String> {
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|e| format!("failed to start {label}: {e}"))?;
-    let deadline = Instant::now() + timeout;
-
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| format!("failed to wait for {label}: {e}"))?
-        {
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let _ = pipe.read_to_end(&mut stdout);
-            }
-
-            let mut stderr = Vec::new();
-            if let Some(mut pipe) = child.stderr.take() {
-                let _ = pipe.read_to_end(&mut stderr);
-            }
-
-            return Ok(Output {
-                status,
-                stdout,
-                stderr,
-            });
-        }
-
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "{label} timed out after {} seconds",
-                timeout.as_secs()
-            ));
-        }
-
-        thread::sleep(Duration::from_millis(100));
-    }
+    // Same pipe-draining requirement as child_output_with_timeout; sharing it
+    // keeps the two from drifting apart again (#516).
+    child_output_with_timeout(child, timeout, label)
 }
 
 #[cfg(windows)]
@@ -4647,6 +4646,44 @@ mod tests {
                 "should reject {bad}"
             );
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_chatty_child_is_drained_rather_than_deadlocked() {
+        // Reading the pipes only after try_wait() reports an exit deadlocks any
+        // child that outruns the OS pipe buffer (64 KiB on Linux, smaller on
+        // macOS): it blocks in write() with nobody reading, so it never exits.
+        // warmup_models pipes both streams and its downloads emit tqdm progress
+        // to stderr in proportion to how long they take, so the old code failed
+        // for users on slow connections after burning the full 30-minute
+        // timeout (#516).
+        //
+        // 512 KiB on each stream is comfortably past any pipe buffer. A short
+        // timeout keeps the failure mode obvious: without concurrent draining
+        // this returns Err(timed out) instead of the output.
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("yes stdoutstdoutstdout | head -c 524288; yes errerrerr | head -c 524288 >&2")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let output =
+            super::command_output_with_timeout(command, Duration::from_secs(20), "chatty child")
+                .expect("a child that fills its pipes must still be collected");
+
+        assert!(output.status.success());
+        assert_eq!(
+            output.stdout.len(),
+            524_288,
+            "stdout must be drained in full"
+        );
+        assert_eq!(
+            output.stderr.len(),
+            524_288,
+            "stderr must be drained in full"
+        );
     }
 
     #[test]
