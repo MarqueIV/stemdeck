@@ -1000,8 +1000,14 @@ async fn download_app_update(
         // never install something the current plan did not ask for.
         let _ = fs::remove_file(&app_archive);
 
+        validate_release_url(&plan.app_url)?;
         download_file_with_progress(&plan.app_url, &app_archive, &app_handle).await?;
-        verify_update_sha256(&app_archive, &plan.app_sha256, "app update")
+        verify_update_sha256(&app_archive, &plan.app_sha256, "app update")?;
+        // Record what was verified so apply_app_update can check the bytes it
+        // is about to extract, rather than trusting that whatever now sits at
+        // this path is what this function approved.
+        let _ = fs::write(app_sha_path(&downloads), plan.app_sha256.trim());
+        Ok(())
     }
 }
 
@@ -1010,6 +1016,13 @@ async fn download_app_update(
 /// the frontend) before it is ever extracted. On mismatch the file is removed
 /// so a corrupt or tampered download can never be applied.
 #[cfg(any(windows, target_os = "linux"))]
+/// Where download_app_update records the checksum it verified, so
+/// apply_app_update can re-check the bytes it is about to extract.
+#[cfg(any(windows, target_os = "linux"))]
+fn app_sha_path(downloads: &Path) -> PathBuf {
+    downloads.join(format!("{UPDATE_APP_ARCHIVE}.sha256"))
+}
+
 fn verify_update_sha256(path: &Path, expected: &str, label: &str) -> Result<(), String> {
     let actual = sha256_file(path)?;
     if !actual.eq_ignore_ascii_case(expected.trim()) {
@@ -1181,6 +1194,13 @@ fn apply_app_update(
                 "no downloaded app update found -- call download_app_update first".to_string(),
             );
         }
+        // Re-verify rather than trusting the path. download_app_update checked
+        // these bytes, but anything able to write into data/downloads between
+        // the two calls would otherwise be extracted over the live install
+        // unchecked (#510).
+        let recorded = fs::read_to_string(app_sha_path(&downloads))
+            .map_err(|_| "no verified checksum for the downloaded update -- download it again")?;
+        verify_update_sha256(&app_archive, recorded.trim(), "app update")?;
 
         // ── Phase 1: stage and validate, touching nothing live ──
         //
@@ -2485,6 +2505,38 @@ fn open_url(url: String) -> Result<(), String> {
 
 /// Only localhost URLs, and only http(s). Guards against a compromised WebView
 /// using the desktop shell as an SSRF proxy (#138).
+/// Hosts an in-app update may be fetched from.
+///
+/// GitHub serves release assets from `github.com` and redirects to
+/// `objects.githubusercontent.com`, so both have to be here.
+const RELEASE_ASSET_HOSTS: [&str; 2] = ["github.com", "objects.githubusercontent.com"];
+
+/// Reject an update URL that does not point at our own release assets.
+///
+/// `download_app_update` takes its URL from the WebView, and the SHA-256 it
+/// checks against comes from the same place -- so the checksum proves the file
+/// arrived intact, not that it came from us. Without a host check, anything
+/// able to run script on that page can hand the shell an archive that
+/// `apply_app_update` then extracts over StemDeck's own executable and
+/// backend/ (#510). The page is served over http by the Python backend, which
+/// Tauri treats as a remote origin, and these app-defined commands are not
+/// ACL-gated by the capability config.
+///
+/// Deliberately not `validate_download_url`: that one permits only
+/// 127.0.0.1/localhost, for a different caller, and would reject every real
+/// release URL.
+fn validate_release_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| "invalid update URL".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("update URLs must use https".to_string());
+    }
+    let host = parsed.host_str().unwrap_or("");
+    if !RELEASE_ASSET_HOSTS.contains(&host) {
+        return Err(format!("refusing to download an update from {host}"));
+    }
+    Ok(())
+}
+
 fn validate_download_url(url: &str) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("only http/https URLs are permitted".to_string());
@@ -4564,6 +4616,37 @@ mod tests {
             fs::Permissions::from_mode(0o755),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn only_our_own_release_assets_are_downloadable_as_updates() {
+        // download_app_update takes its URL from the WebView and checks it
+        // against a SHA-256 from the same caller, so the checksum proves the
+        // bytes arrived intact, not that they came from us. apply_app_update
+        // then extracts the result over StemDeck's own executable (#510).
+        for ok in [
+            "https://github.com/stemdeckapp/stemdeck/releases/download/v0.16.1/x.zip",
+            "https://objects.githubusercontent.com/github-production-release-asset/1/2",
+        ] {
+            assert!(super::validate_release_url(ok).is_ok(), "should allow {ok}");
+        }
+
+        for bad in [
+            "https://evil.example/x.zip",
+            // Lookalikes: the check must be on the host, not a substring of it.
+            "https://github.com.evil.example/x.zip",
+            "https://notgithub.com/x.zip",
+            // Plain http would let a LAN attacker swap the bytes in flight,
+            // which matters because the page itself is served over http.
+            "http://github.com/stemdeckapp/stemdeck/releases/download/v1/x.zip",
+            "file:///etc/passwd",
+            "not a url",
+        ] {
+            assert!(
+                super::validate_release_url(bad).is_err(),
+                "should reject {bad}"
+            );
+        }
     }
 
     #[test]
