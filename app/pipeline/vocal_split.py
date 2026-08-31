@@ -61,6 +61,10 @@ def split_vocals(job: Job, stems_dir: Path) -> list[str]:
     # the mismatch simply moves rather than being fixed. Demucs and audio-
     # separator both emit progress bars and can echo track metadata, neither of
     # which is guaranteed to be cp1252-safe.
+    # The worker arms a watchdog on this and hard-exits when we disappear, so a
+    # kill that runs no cleanup (SIGKILL, Force Quit, Task Manager, a crash)
+    # cannot leave it running with nobody to collect the result (#519).
+    env["STEMDECK_PARENT_PID"] = str(os.getpid())
     env["PYTHONIOENCODING"] = "utf-8:replace"
     try:
         import certifi

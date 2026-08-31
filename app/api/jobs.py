@@ -326,6 +326,16 @@ def cancel_job(job_id: str) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     if job.status in ("done", "error", "cancelled"):
+        # A vocal split only ever runs on a done job, so this early return made
+        # it uncancellable by construction: the flag was never even set, while
+        # the split held _pipeline_lock and stalled the whole import queue for
+        # its full duration (#519). Terminating the worker is enough -- the
+        # split's own error path marks it failed and releases the lock.
+        if job.vocal_split == "running":
+            job.cancel_requested = True
+            proc = registry_get_proc(job_id)
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
         return job.to_state()
     job.cancel_requested = True
 
