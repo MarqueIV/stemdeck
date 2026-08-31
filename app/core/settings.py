@@ -25,6 +25,8 @@ import json
 import logging
 import os
 import threading
+import time
+import uuid
 from pathlib import Path
 
 from app.core.config import (
@@ -70,16 +72,97 @@ def _default_allow_network() -> bool:
     return os.environ.get("STEMDECK_DESKTOP") != "1"
 
 
-def _load() -> dict:
+def _mirror_path() -> Path | None:
+    """Where the per-user copy lives, or None when the shell did not set one.
+
+    The path comes from the shell (STEMDECK_SETTINGS_MIRROR) so the platform
+    logic stays in one place -- see _mirror_settings."""
+    target = os.environ.get("STEMDECK_SETTINGS_MIRROR", "").strip()
+    return Path(target) if target else None
+
+
+def _read_json_dict(path: Path) -> dict | None:
+    """Parse `path` as a JSON object.
+
+    None means "there is nothing usable here" -- absent, unreadable, not JSON,
+    or JSON that is not an object. Callers that need to tell *absent* from
+    *unusable* must check existence themselves; that distinction is the whole
+    point of _load below."""
     try:
-        data = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return data
+        data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        pass  # no settings file yet — first run; use defaults
+        return None
     except Exception:
-        # Corrupt/unreadable file: fall back to defaults rather than crash.
-        _log.warning("could not read settings from %s", _SETTINGS_PATH, exc_info=True)
+        _log.warning("could not read settings from %s", path, exc_info=True)
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _atomic_write_json(path: Path, data: dict) -> bool:
+    """Write `data` to `path` so an interrupted write cannot destroy what was
+    there before.
+
+    write_text() truncates first and writes second, so a process that dies in
+    between leaves a file that exists and does not parse -- which _load then
+    could not distinguish from a first run, and the next setting change
+    persisted a one-key file over both this and the mirror (#509). Same
+    same-directory temp + replace the registry already uses; the temp name is
+    unique per call so two concurrent writers cannot interleave on it."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(json.dumps(data), encoding="utf-8")
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
+    except Exception:
+        _log.warning("could not persist settings to %s", path, exc_info=True)
+        return False
+    return True
+
+
+def _quarantine_corrupt(path: Path) -> None:
+    """Move an unusable settings file aside rather than leaving it to be
+    overwritten by the next save.
+
+    Renaming keeps the bytes for diagnosis. Deleting or writing over them
+    destroys the only remaining evidence of what the user had configured."""
+    try:
+        target = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
+        path.replace(target)
+        _log.warning("settings at %s were unreadable; moved aside to %s", path, target)
+    except OSError:
+        _log.warning("could not move unreadable settings at %s aside", path, exc_info=True)
+
+
+def _load() -> dict:
+    """Read settings, telling "no file yet" apart from "file we cannot read".
+
+    Conflating the two is what lost real user settings: a torn write left an
+    unparsable file, this returned {} exactly as it would on a first run, and
+    the next set_*() then persisted a single key over both settings.json and
+    the mirror that existed to protect it."""
+    if not _SETTINGS_PATH.exists():
+        return {}  # no settings file yet — genuine first run; use defaults
+
+    data = _read_json_dict(_SETTINGS_PATH)
+    if data is not None:
+        return data
+
+    # The file is there but unusable. Preserve it, then try the per-user copy
+    # the shell keeps outside the install directory.
+    _quarantine_corrupt(_SETTINGS_PATH)
+    mirror = _mirror_path()
+    if mirror is not None:
+        recovered = _read_json_dict(mirror)
+        if recovered:
+            _log.warning("recovered settings from mirror %s", mirror)
+            # Put them back immediately. Without this the recovery only lasts
+            # until the next start, which would read a now-absent primary and
+            # silently fall back to defaults again.
+            _atomic_write_json(_SETTINGS_PATH, recovered)
+            return recovered
     return {}
 
 
@@ -106,11 +189,7 @@ def _save() -> bool:
     is still reported back, because one caller (set_jobs_dir) is coupled to
     something irreversible enough that silently swallowing a failure there
     would be actively misleading rather than merely inconvenient (#403)."""
-    try:
-        _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _SETTINGS_PATH.write_text(json.dumps(_ensure()), encoding="utf-8")
-    except Exception:
-        _log.warning("could not persist settings to %s", _SETTINGS_PATH, exc_info=True)
+    if not _atomic_write_json(_SETTINGS_PATH, _ensure()):
         return False
     _mirror_settings()
     return True
@@ -135,19 +214,13 @@ def _mirror_settings() -> None:
     the shell (STEMDECK_SETTINGS_MIRROR) so the platform logic stays in one
     place and both halves cannot drift apart.
     """
-    target = os.environ.get("STEMDECK_SETTINGS_MIRROR", "").strip()
-    if not target:
+    path = _mirror_path()
+    if path is None:
         return
-    try:
-        path = Path(target)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Same-directory temp + replace: a torn write here would be restored
-        # verbatim into the user's next install.
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(_ensure()), encoding="utf-8")
-        tmp.replace(path)
-    except Exception:
-        _log.warning("could not mirror settings to %s", target, exc_info=True)
+    # Same-directory temp + replace: a torn write here would be restored
+    # verbatim into the user's next install. _atomic_write_json also gives the
+    # temp file a unique name, so two writers cannot interleave on it.
+    _atomic_write_json(path, _ensure())
 
 
 def _num(v: object) -> int | None:
