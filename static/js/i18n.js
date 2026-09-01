@@ -337,8 +337,6 @@ const en = {
 
   "panels.analysis": "Analysis",
 
-  "panels.clickToCollapse": "Click to collapse",
-
   "panels.timeline": "Timeline",
 
   "panels.analysisTitle": "Show or hide the track analysis",
@@ -346,6 +344,12 @@ const en = {
   "panels.sectionsTitle": "Show or hide the sections bar",
 
   "panels.timelineTitle": "Show or hide the timeline",
+
+  "panels.all": "All",
+
+  "panels.collapse": "Collapse",
+
+  "panels.allTitle": "Show or hide every panel and the library",
   "mixer.hint": "Drag fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -413,8 +417,9 @@ const en = {
 
   "position.group": "Position",
   "position.loopTitle": "Loop the selected position (L)",
-  "position.loopLabel": "Loop position",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Exact loop start / end (mm:ss.mmm or seconds)",
+  "position.loopScrollHint": "Scroll up/down to adjust",
   "position.loopStartAria": "Loop start",
   "position.loopEndAria": "Loop end",
 
@@ -426,7 +431,6 @@ const en = {
   "speed.ariaLabel": "Playback speed",
 
   "click.group": "Click track",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Click track (K)",
   "click.toggleAria": "Click track",
   "click.unavailableAria": "Click track unavailable",
@@ -920,8 +924,6 @@ const pl = {
 
   "panels.analysis": "Analiza",
 
-  "panels.clickToCollapse": "Kliknij, aby zwinąć",
-
   "panels.timeline": "Oś czasu",
 
   "panels.analysisTitle": "Pokaż lub ukryj analizę utworu",
@@ -929,6 +931,12 @@ const pl = {
   "panels.sectionsTitle": "Pokaż lub ukryj pasek sekcji",
 
   "panels.timelineTitle": "Pokaż lub ukryj oś czasu",
+
+  "panels.all": "Wszystko",
+
+  "panels.collapse": "Zwiń",
+
+  "panels.allTitle": "Pokaż lub ukryj wszystkie panele i bibliotekę",
   "mixer.hint": "Przeciągnij suwak · M/S",
   "stemsPanel.ariaLabel": "Ścieżki",
 
@@ -994,8 +1002,9 @@ const pl = {
 
   "position.group": "Pozycja",
   "position.loopTitle": "Zapętl zaznaczoną pozycję (L)",
-  "position.loopLabel": "Pętla pozycji",
+  "position.loopLabel": "Pętla",
   "position.loopExactTitle": "Dokładny początek / koniec pętli (mm:ss.mmm lub sekundy)",
+  "position.loopScrollHint": "Przewiń, aby dostosować",
   "position.loopStartAria": "Początek pętli",
   "position.loopEndAria": "Koniec pętli",
 
@@ -1007,7 +1016,6 @@ const pl = {
   "speed.ariaLabel": "Prędkość odtwarzania",
 
   "click.group": "Metronom",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Metronom (K)",
   "click.toggleAria": "Metronom",
   "click.unavailableAria": "Metronom niedostępny",
@@ -1493,8 +1501,6 @@ const ja = {
 
   "panels.analysis": "解析",
 
-  "panels.clickToCollapse": "クリックで折りたたみ",
-
   "panels.timeline": "タイムライン",
 
   "panels.analysisTitle": "トラック解析の表示を切り替えます",
@@ -1502,6 +1508,12 @@ const ja = {
   "panels.sectionsTitle": "セクションバーの表示を切り替えます",
 
   "panels.timelineTitle": "タイムラインの表示を切り替えます",
+
+  "panels.all": "すべて",
+
+  "panels.collapse": "折りたたむ",
+
+  "panels.allTitle": "すべてのパネルとライブラリの表示を切り替えます",
   "mixer.hint": "フェーダーをドラッグ · M/S",
   "stemsPanel.ariaLabel": "パート",
 
@@ -1566,8 +1578,9 @@ const ja = {
 
   "position.group": "位置",
   "position.loopTitle": "選択した位置をループ (L)",
-  "position.loopLabel": "位置をループ",
+  "position.loopLabel": "ループ",
   "position.loopExactTitle": "正確なループ開始/終了 (mm:ss.mmm または秒)",
+  "position.loopScrollHint": "スクロールで調整",
   "position.loopStartAria": "ループ開始",
   "position.loopEndAria": "ループ終了",
 
@@ -1579,7 +1592,6 @@ const ja = {
   "speed.ariaLabel": "再生速度",
 
   "click.group": "クリックトラック",
-  "click.alpha": "アルファ",
   "click.toggleTitle": "クリックトラック (K)",
   "click.toggleAria": "クリックトラック",
   "click.unavailableAria": "クリックトラック利用不可",
@@ -2041,8 +2053,6 @@ const zhHans = {
 
   "panels.analysis": "分析",
 
-  "panels.clickToCollapse": "点击可折叠",
-
   "panels.timeline": "时间轴",
 
   "panels.analysisTitle": "显示或隐藏音轨分析",
@@ -2050,6 +2060,12 @@ const zhHans = {
   "panels.sectionsTitle": "显示或隐藏段落栏",
 
   "panels.timelineTitle": "显示或隐藏时间轴",
+
+  "panels.all": "全部",
+
+  "panels.collapse": "折叠",
+
+  "panels.allTitle": "显示或隐藏所有面板和音乐库",
   "mixer.hint": "拖动推子 · M/S",
   "stemsPanel.ariaLabel": "音轨",
 
@@ -2114,8 +2130,9 @@ const zhHans = {
 
   "position.group": "位置",
   "position.loopTitle": "循环所选位置 (L)",
-  "position.loopLabel": "循环位置",
+  "position.loopLabel": "循环",
   "position.loopExactTitle": "精确循环起止点 (mm:ss.mmm 或秒)",
+  "position.loopScrollHint": "滚动进行调整",
   "position.loopStartAria": "循环起点",
   "position.loopEndAria": "循环终点",
 
@@ -2127,7 +2144,6 @@ const zhHans = {
   "speed.ariaLabel": "播放速度",
 
   "click.group": "节拍器",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "节拍器 (K)",
   "click.toggleAria": "节拍器",
   "click.unavailableAria": "节拍器不可用",
@@ -2589,8 +2605,6 @@ const de = {
 
   "panels.analysis": "Analyse",
 
-  "panels.clickToCollapse": "Zum Einklappen klicken",
-
   "panels.timeline": "Zeitleiste",
 
   "panels.analysisTitle": "Track-Analyse ein- oder ausblenden",
@@ -2598,6 +2612,12 @@ const de = {
   "panels.sectionsTitle": "Abschnittsleiste ein- oder ausblenden",
 
   "panels.timelineTitle": "Zeitleiste ein- oder ausblenden",
+
+  "panels.all": "Alle",
+
+  "panels.collapse": "Einklappen",
+
+  "panels.allTitle": "Alle Bereiche und die Bibliothek ein- oder ausblenden",
   "mixer.hint": "Fader ziehen · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -2663,8 +2683,9 @@ const de = {
 
   "position.group": "Position",
   "position.loopTitle": "Ausgewählte Position loopen (L)",
-  "position.loopLabel": "Loop-Position",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Genauer Loop-Start/-Ende (mm:ss.mmm oder Sekunden)",
+  "position.loopScrollHint": "Zum Anpassen scrollen",
   "position.loopStartAria": "Loop-Start",
   "position.loopEndAria": "Loop-Ende",
 
@@ -2676,7 +2697,6 @@ const de = {
   "speed.ariaLabel": "Wiedergabegeschwindigkeit",
 
   "click.group": "Click-Track",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Click-Track (K)",
   "click.toggleAria": "Click-Track",
   "click.unavailableAria": "Click-Track nicht verfügbar",
@@ -3148,8 +3168,6 @@ const pt = {
 
   "panels.analysis": "Análise",
 
-  "panels.clickToCollapse": "Clique para recolher",
-
   "panels.timeline": "Linha do tempo",
 
   "panels.analysisTitle": "Mostrar ou ocultar a análise da faixa",
@@ -3157,6 +3175,12 @@ const pt = {
   "panels.sectionsTitle": "Mostrar ou ocultar a barra de seções",
 
   "panels.timelineTitle": "Mostrar ou ocultar a linha do tempo",
+
+  "panels.all": "Tudo",
+
+  "panels.collapse": "Recolher",
+
+  "panels.allTitle": "Mostrar ou ocultar todos os painéis e a biblioteca",
   "mixer.hint": "Arraste o fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -3222,8 +3246,9 @@ const pt = {
 
   "position.group": "Posição",
   "position.loopTitle": "Repetir a posição selecionada (L)",
-  "position.loopLabel": "Posição de loop",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Início/fim exato do loop (mm:ss.mmm ou segundos)",
+  "position.loopScrollHint": "Role para ajustar",
   "position.loopStartAria": "Início do loop",
   "position.loopEndAria": "Fim do loop",
 
@@ -3235,7 +3260,6 @@ const pt = {
   "speed.ariaLabel": "Velocidade de reprodução",
 
   "click.group": "Clique de referência",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Clique de referência (K)",
   "click.toggleAria": "Clique de referência",
   "click.unavailableAria": "Clique de referência indisponível",
@@ -3709,8 +3733,6 @@ const id = {
 
   "panels.analysis": "Analisis",
 
-  "panels.clickToCollapse": "Klik untuk menciutkan",
-
   "panels.timeline": "Lini masa",
 
   "panels.analysisTitle": "Tampilkan atau sembunyikan analisis trek",
@@ -3718,6 +3740,12 @@ const id = {
   "panels.sectionsTitle": "Tampilkan atau sembunyikan bilah bagian",
 
   "panels.timelineTitle": "Tampilkan atau sembunyikan lini masa",
+
+  "panels.all": "Semua",
+
+  "panels.collapse": "Ciutkan",
+
+  "panels.allTitle": "Tampilkan atau sembunyikan semua panel dan pustaka",
   "mixer.hint": "Seret fader · M/S",
   "stemsPanel.ariaLabel": "Stem",
 
@@ -3782,8 +3810,9 @@ const id = {
 
   "position.group": "Posisi",
   "position.loopTitle": "Loop posisi yang dipilih (L)",
-  "position.loopLabel": "Posisi loop",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Awal/akhir loop yang tepat (mm:ss.mmm atau detik)",
+  "position.loopScrollHint": "Gulir untuk menyesuaikan",
   "position.loopStartAria": "Awal loop",
   "position.loopEndAria": "Akhir loop",
 
@@ -3795,7 +3824,6 @@ const id = {
   "speed.ariaLabel": "Kecepatan putar",
 
   "click.group": "Click Track",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Click track (K)",
   "click.toggleAria": "Click track",
   "click.unavailableAria": "Click track tidak tersedia",
@@ -4257,8 +4285,6 @@ const fr = {
 
   "panels.analysis": "Analyse",
 
-  "panels.clickToCollapse": "Cliquez pour réduire",
-
   "panels.timeline": "Chronologie",
 
   "panels.analysisTitle": "Afficher ou masquer l'analyse du morceau",
@@ -4266,6 +4292,12 @@ const fr = {
   "panels.sectionsTitle": "Afficher ou masquer la barre de sections",
 
   "panels.timelineTitle": "Afficher ou masquer la chronologie",
+
+  "panels.all": "Tout",
+
+  "panels.collapse": "Réduire",
+
+  "panels.allTitle": "Afficher ou masquer tous les panneaux et la bibliothèque",
   "mixer.hint": "Glissez le fader · M/S",
   "stemsPanel.ariaLabel": "Pistes",
 
@@ -4331,8 +4363,9 @@ const fr = {
 
   "position.group": "Position",
   "position.loopTitle": "Boucler la position sélectionnée (L)",
-  "position.loopLabel": "Boucler la position",
+  "position.loopLabel": "Boucle",
   "position.loopExactTitle": "Début / fin exacts de la boucle (mm:ss.mmm ou secondes)",
+  "position.loopScrollHint": "Faites défiler pour régler",
   "position.loopStartAria": "Début de la boucle",
   "position.loopEndAria": "Fin de la boucle",
 
@@ -4344,7 +4377,6 @@ const fr = {
   "speed.ariaLabel": "Vitesse de lecture",
 
   "click.group": "Métronome",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Métronome (K)",
   "click.toggleAria": "Métronome",
   "click.unavailableAria": "Métronome indisponible",
@@ -4702,6 +4734,7 @@ const fr = {
 // through pt (see FALLBACK), so the two variants cannot drift and a key
 // added to pt later is picked up here rather than reverting to English.
 const ptPT = {
+  "position.loopScrollHint": "Desloque para ajustar",
   "settings.autoDelete.title": "Eliminar automaticamente as faixas concluídas",
   "pitch.resetTitle": "Repor todas as faixas no tom original",
   "settings.autoDelete.desc": "Desativado por predefinição. As faixas separadas são mantidas para sempre. A eliminação não pode ser anulada.",
@@ -4927,8 +4960,6 @@ const es = {
 
   "panels.analysis": "Análisis",
 
-  "panels.clickToCollapse": "Haz clic para contraer",
-
   "panels.timeline": "Línea de tiempo",
 
   "panels.analysisTitle": "Mostrar u ocultar el análisis de la pista",
@@ -4936,6 +4967,12 @@ const es = {
   "panels.sectionsTitle": "Mostrar u ocultar la barra de secciones",
 
   "panels.timelineTitle": "Mostrar u ocultar la línea de tiempo",
+
+  "panels.all": "Todo",
+
+  "panels.collapse": "Contraer",
+
+  "panels.allTitle": "Mostrar u ocultar todos los paneles y la biblioteca",
   "mixer.hint": "Arrastra el fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -5001,8 +5038,9 @@ const es = {
 
   "position.group": "Posición",
   "position.loopTitle": "Repetir en loop la posición seleccionada (L)",
-  "position.loopLabel": "Loop de la posición",
+  "position.loopLabel": "Bucle",
   "position.loopExactTitle": "Inicio / fin exacto del loop (mm:ss.mmm o segundos)",
+  "position.loopScrollHint": "Desplaza para ajustar",
   "position.loopStartAria": "Inicio del loop",
   "position.loopEndAria": "Fin del loop",
 
@@ -5014,7 +5052,6 @@ const es = {
   "speed.ariaLabel": "Velocidad",
 
   "click.group": "Click",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Click (K)",
   "click.toggleAria": "Click",
   "click.unavailableAria": "Click no disponible",
@@ -5509,8 +5546,6 @@ const ko = {
 
   "panels.analysis": "분석",
 
-  "panels.clickToCollapse": "눌러서 접기",
-
   "panels.timeline": "타임라인",
 
   "panels.analysisTitle": "트랙 분석 표시하거나 숨기기",
@@ -5518,6 +5553,12 @@ const ko = {
   "panels.sectionsTitle": "구간 막대 표시하거나 숨기기",
 
   "panels.timelineTitle": "타임라인 표시하거나 숨기기",
+
+  "panels.all": "전체",
+
+  "panels.collapse": "접기",
+
+  "panels.allTitle": "모든 패널과 라이브러리 표시하거나 숨기기",
   "mixer.hint": "페이더 드래그 · M/S",
   "stemsPanel.ariaLabel": "스템",
 
@@ -5582,8 +5623,9 @@ const ko = {
 
   "position.group": "위치",
   "position.loopTitle": "선택한 구간을 반복해요 (L)",
-  "position.loopLabel": "구간 반복",
+  "position.loopLabel": "반복",
   "position.loopExactTitle": "반복 시작과 끝을 정확히 (mm:ss.mmm 또는 초)",
+  "position.loopScrollHint": "스크롤로 조절",
   "position.loopStartAria": "반복 시작",
   "position.loopEndAria": "반복 끝",
 
@@ -5595,7 +5637,6 @@ const ko = {
   "speed.ariaLabel": "재생 속도",
 
   "click.group": "클릭 트랙",
-  "click.alpha": "알파",
   "click.toggleTitle": "클릭 트랙 (K)",
   "click.toggleAria": "클릭 트랙",
   "click.unavailableAria": "클릭 트랙을 쓸 수 없음",
