@@ -590,8 +590,15 @@ def reset_app_data() -> dict[str, object]:
     from app.pipeline import jobqueue
 
     jobqueue.clear()
-    reset_registry(JOBS_DIR)
-    return {"ok": True}
+    # Anything that could not be removed is reported rather than swallowed: the
+    # frontend used to take an unconditional {"ok": true} as licence to wipe its
+    # own deletion tombstone, and any surviving directory was then re-adopted on
+    # the next start with nothing left to suppress it (#521). reset_all also
+    # records the survivors server-side, so they stay deleted regardless.
+    undeleted = reset_registry(JOBS_DIR)
+    if undeleted:
+        _log.warning("reset left %d entries on disk: %s", len(undeleted), undeleted)
+    return {"ok": True, "undeleted": len(undeleted)}
 
 
 @app.get("/api/registry", tags=["settings"])
@@ -850,17 +857,44 @@ _CSP = (
 # The ceiling is far above either editor's reach: 10000 sections with the
 # longest name each is about 1.6 MB, and 20000 beats about 0.4 MB. Uploads are
 # unaffected -- they are a different path with their own 400 MB limit.
-_EDITOR_BODY_LIMIT = 4 * 1024 * 1024
-_EDITOR_PATH_SUFFIXES = ("/sections", "/beats")
+_JSON_BODY_LIMIT = 4 * 1024 * 1024
+# Multipart uploads stream to disk and enforce their own, much larger, limit.
+
+
+def _is_upload(request: Request) -> bool:
+    ctype = request.headers.get("content-type", "")
+    return ctype.startswith("multipart/form-data")
+
+
+def _is_chunked(request: Request) -> bool:
+    return "chunked" in request.headers.get("transfer-encoding", "").lower()
 
 
 @app.middleware("http")
-async def limit_editor_body_size(request: Request, call_next):
-    if request.method in ("PATCH", "POST", "PUT") and request.url.path.endswith(
-        _EDITOR_PATH_SUFFIXES
-    ):
+async def limit_json_body_size(request: Request, call_next):
+    """Cap JSON request bodies.
+
+    Scoped by path suffix before, which left every other JSON endpoint
+    uncapped: /api/search, /api/playlist, /api/settings and the JSON branch of
+    /api/jobs all await request.json(), and Starlette accumulates the whole
+    body before json.loads runs it on the event loop. A 200 MB body to
+    /api/search stalled every other request, including a running job's progress
+    stream, with no valid job or prior state needed (#481, reopened as #512).
+
+    Uploads are exempt: they are multipart, not JSON, and carry their own
+    400 MB limit on a path that streams to disk rather than buffering.
+    """
+    if request.method in ("PATCH", "POST", "PUT") and not _is_upload(request):
         declared = request.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > _EDITOR_BODY_LIMIT:
+        if declared is None:
+            # No Content-Length means chunked, which used to skip the check
+            # entirely and fall through to an unbounded request.body().
+            if _is_chunked(request):
+                return JSONResponse(
+                    {"detail": "request body must declare its length"},
+                    status_code=411,
+                )
+        elif declared.isdigit() and int(declared) > _JSON_BODY_LIMIT:
             return JSONResponse({"detail": "request body too large"}, status_code=413)
     return await call_next(request)
 

@@ -258,7 +258,11 @@ def _render_events(
 
     import numpy as np
 
-    buf = np.zeros(total, dtype=np.float64)
+    # float32, not float64: the buffer is one sample per frame for the whole
+    # render, so a long export was allocating twice what it needed and then
+    # again in the int16 conversion below. The output is 16-bit PCM, so the
+    # extra mantissa was never audible (#512).
+    buf = np.zeros(total, dtype=np.float32)
     # Only two distinct voices, so render each once and stamp it in.
     plain = _voice(CLICK_PEAK, CLICK_FREQ, sample_rate)
     accented = _voice(ACCENT_PEAK, ACCENT_FREQ, sample_rate)

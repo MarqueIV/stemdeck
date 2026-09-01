@@ -200,6 +200,21 @@ async def _dispatch(job: Job) -> None:
     await run_pipeline(job, source_url, JOBS_DIR)
 
 
+def _finalise_dropped_job(job: Job) -> None:
+    """Complete a cancellation the API could not finish itself.
+
+    cancel_job can only finalise a job it still finds in the queue. Between
+    _pop_next() and _set_running() a job is in neither the queue nor the
+    running slot, so a cancel arriving there sets cancel_requested and returns.
+    The worker owns the job by then and is the only thing that can close it
+    out (#520)."""
+    if not job.cancel_requested or job.status in ("done", "error", "cancelled"):
+        return
+    _set(job, status="cancelled", stage="Cancelled")
+    cleanup_job_dir(job.id)
+    registry_persist(JOBS_DIR)
+
+
 async def _worker_loop() -> None:
     assert _wake is not None
     while not _stopping:
@@ -220,7 +235,19 @@ async def _worker_loop() -> None:
         if job is None:
             continue
         if job.cancel_requested or job.status in ("done", "error", "cancelled"):
-            # Cancelled or finished while it waited; drop it silently.
+            # Cancelled or finished while it waited.
+            #
+            # Finalising here is not optional. Between _pop_next() above and
+            # _set_running() below the job is in neither the queue nor the
+            # running slot, so a cancel arriving in that window finds
+            # discard() False and running_id() None and returns having only
+            # set cancel_requested. This worker is the sole consumer and owns
+            # the job by now, so if it just dropped it the job would sit at
+            # "queued" forever: absent from the queue view, still counted by
+            # pending_count against the capacity limit, its uploaded source
+            # never freed, and -- because "queued" is persisted -- re-queued
+            # on every restart (#520).
+            _finalise_dropped_job(job)
             continue
 
         # Claim it. No await between the pop and this status write, so a job is

@@ -1,4 +1,5 @@
 import { fmtTime, fmtTickLabel, fmtTimeMs, parseTimecode, storeGet, storeSet } from "./utils.js";
+import { MIN_LOOP_SEC, loopDragResult } from "./loopRegion.js";
 import {
   playBtn, playMiniBtn, stopBtn, loopBtn, timeEl, masterFader,
   speedBtns,
@@ -26,7 +27,6 @@ import { isDownbeatIndex, getBeats as getGridBeats, getBars as getGridBars } fro
 import { computeCountIn } from "./metronome.js";
 import { t } from "./i18n.js";
 
-const MIN_LOOP_SEC = 0.2;
 // Zoom range. 1 is the whole track fitted to the panel; there is nothing below
 // it to show, so it is the floor rather than a soft default. 5 is the ceiling
 // because peaks.json carries 1500 points per stem: past roughly 5x a typical
@@ -70,7 +70,18 @@ function timeFromClientX(clientX) {
   return frac * totalDuration;
 }
 
-function setPlayheadTime(sec) {
+/// The clock that actually owns playback.
+///
+/// engineMode() defaults to "chunked", where audioEngine drives audio and the
+/// multitrack is mounted with url: null for visuals only -- so operating on
+/// `multitrack` directly moves nothing and reads 0. Everything in this module
+/// already went through `audioEngine ?? multitrack`; exporting it stops other
+/// modules re-deriving it and drifting (#515).
+export function transport() {
+  return audioEngine ?? multitrack;
+}
+
+export function setPlayheadTime(sec) {
   const tx = audioEngine ?? multitrack;
   if (!tx || !totalDuration) return;
   const next = Math.max(0, Math.min(totalDuration, sec));
@@ -287,6 +298,59 @@ function commitLoopInput(which) {
   updateLoopRegionVisual();
 }
 
+// Wheel over a loop field nudges it, in seconds on the left of the decimal
+// point and in milliseconds on the right. Two units in one field is the whole
+// point: a loop boundary is chosen coarsely first and then trimmed, and doing
+// the trim by retyping nine characters is why the fields were barely used.
+//
+// A tenth of a second per notch on the seconds half, ten milliseconds on the
+// other. One millisecond per notch would need a hundred notches to cover what
+// the ear can hear.
+const LOOP_WHEEL_SEC = 0.1;
+const LOOP_WHEEL_MS = 0.01;
+
+// Which half of the field the pointer is over. Character-level hit-testing
+// inside an <input> is not reliable across browsers (caretRangeFromPoint
+// returns the element, not an offset inside it), but only one boundary matters
+// here, so measure the text up to the decimal point and compare. The field is
+// centre-aligned and its padding is symmetric, so the border box and the
+// content box share a centre and the string starts halfway through the
+// leftover space.
+let _loopWheelCtx = null;
+function loopWheelUnit(input, clientX) {
+  const value = input.value || "";
+  const dot = value.indexOf(".");
+  if (dot < 0) return "sec";
+  const style = getComputedStyle(input);
+  _loopWheelCtx ||= document.createElement("canvas").getContext("2d");
+  _loopWheelCtx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  const full = _loopWheelCtx.measureText(value).width;
+  const throughDot = _loopWheelCtx.measureText(value.slice(0, dot + 1)).width;
+  const rect = input.getBoundingClientRect();
+  const textStart = rect.left + (rect.width - full) / 2;
+  return clientX >= textStart + throughDot ? "ms" : "sec";
+}
+
+// Same rules as a typed commit: clamp to the track, never let the two bounds
+// cross inside MIN_LOOP_SEC. A nudge that would break either is dropped rather
+// than clamped to the limit, so holding the wheel against the end of a track
+// does not silently drag the other bound along.
+function nudgeLoopInput(which, direction, unit) {
+  if (totalDuration <= 0) return;
+  const step = unit === "ms" ? LOOP_WHEEL_MS : LOOP_WHEEL_SEC;
+  const current = which === "start" ? loopStart : loopEnd;
+  const next = Math.round((current + direction * step) * 1000) / 1000;
+  if (next < 0 || next > totalDuration) return;
+  const start = which === "start" ? next : loopStart;
+  const end = which === "end" ? next : loopEnd;
+  if (end - start < MIN_LOOP_SEC) return;
+  setLoopStart(start);
+  setLoopEnd(end);
+  setLoopEnabled(true);
+  loopBtn.classList.add("active");
+  updateLoopRegionVisual();
+}
+
 function wireLoopInputs() {
   for (const [input, which] of [
     [loopStartInput, "start"],
@@ -294,6 +358,21 @@ function wireLoopInputs() {
   ]) {
     if (!input) continue;
     input.addEventListener("blur", () => commitLoopInput(which));
+    input.addEventListener(
+      "wheel",
+      (e) => {
+        if (input.disabled || totalDuration <= 0) return;
+        // The lanes zoom on wheel (#493) and the page scrolls; neither is what
+        // a wheel over a numeric field is asking for.
+        e.preventDefault();
+        e.stopPropagation();
+        nudgeLoopInput(which, e.deltaY < 0 ? 1 : -1, loopWheelUnit(input, e.clientX));
+        // syncLoopInputs leaves a focused field alone so it cannot overwrite
+        // what is being typed. A wheel is not typing, so write it back here.
+        input.value = fmtTimeMs(which === "start" ? loopStart : loopEnd);
+      },
+      { passive: false }
+    );
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -436,6 +515,90 @@ export function toggleLoop() {
 
 // Click-drag on the timeline ruler or waveform body to define the loop
 // region. Drag direction doesn't matter -- start and end get sorted.
+// Adjust an existing loop region rather than redrawing it (#538, discussion
+// #507).
+//
+// Three gestures on one element:
+//   - a handle at either edge moves only that edge, so a loop can be tightened
+//     one side at a time instead of being re-measured from scratch;
+//   - the body moves both edges together, preserving length, so a loop found by
+//     ear can be slid;
+//   - a press that does not move is still a seek, which is what the region did
+//     before it became interactive, and losing that would be a regression for
+//     anyone who just wants to click inside their selection.
+//
+// Pointer events throughout, so this works with touch and pen as well as a
+// mouse.
+function wireLoopRegionAdjust() {
+  if (!loopRegionEl) return;
+
+  let mode = null; // "start" | "end" | "move"
+  let pointerId = null;
+  let grabTime = 0; // where in the track the pointer went down
+  let fromStart = 0;
+  let fromEnd = 0;
+  let moved = false;
+
+  const apply = (t) => {
+    const next = loopDragResult({
+      mode,
+      pointerTime: t,
+      grabTime,
+      fromStart,
+      fromEnd,
+      duration: totalDuration,
+    });
+    setLoopStart(next.start);
+    setLoopEnd(next.end);
+    updateLoopRegionVisual();
+  };
+
+  loopRegionEl.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !totalDuration) return;
+    const t = timeFromClientX(e.clientX);
+    if (t === null) return;
+    mode = e.target.closest("[data-loop-handle]")?.dataset.loopHandle ?? "move";
+    pointerId = e.pointerId;
+    grabTime = t;
+    fromStart = loopStart;
+    fromEnd = loopEnd;
+    moved = false;
+    loopRegionEl.classList.add("dragging");
+    loopRegionEl.setPointerCapture(e.pointerId);
+    // Stops wireLoopDrag's surface handler starting a fresh selection
+    // underneath this one.
+    e.stopPropagation();
+    e.preventDefault();
+  });
+
+  loopRegionEl.addEventListener("pointermove", (e) => {
+    if (mode === null || e.pointerId !== pointerId) return;
+    const t = timeFromClientX(e.clientX);
+    if (t === null) return;
+    // Same threshold the create-drag uses to tell a click from a drag.
+    if (Math.abs(t - grabTime) >= MIN_LOOP_SEC) moved = true;
+    apply(t);
+    e.preventDefault();
+  });
+
+  const finish = (e) => {
+    if (mode === null || e.pointerId !== pointerId) return;
+    const wasMove = mode === "move";
+    mode = null;
+    pointerId = null;
+    loopRegionEl.classList.remove("dragging");
+    if (!moved && wasMove) {
+      // A press with no travel: seek, exactly as clicking here did before the
+      // region took pointer events.
+      setPlayheadTime(grabTime);
+    }
+    syncLoopInputs();
+  };
+
+  loopRegionEl.addEventListener("pointerup", finish);
+  loopRegionEl.addEventListener("pointercancel", finish);
+}
+
 // Tiny drags are treated as clicks and seek the playhead instead.
 function wireLoopDrag() {
   let dragging = false;
@@ -690,6 +853,7 @@ export function wireTransportButtons() {
   stopBtn.addEventListener("click", stopTransport);
   loopBtn.addEventListener("click", toggleLoop);
   wireLoopDrag();
+  wireLoopRegionAdjust();
   wireLoopInputs();
   wireZoomButtons();
   wireLaneScrollSync();

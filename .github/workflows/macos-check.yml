@@ -26,6 +26,20 @@ concurrency:
 
 jobs:
   check:
+    # Never run a fork's code on the self-hosted runner. cargo build/clippy/test
+    # all execute whatever the PR supplies -- build.rs, proc-macro crates, a
+    # swapped Cargo.toml dependency, the test bodies themselves -- and this
+    # runner is the same machine that builds, signs and uploads every macOS
+    # release. Nothing here cleans the workspace, so an implant in ~/.cargo,
+    # ~/.rustup or the persistent _work tree would survive into the next
+    # release. permissions: {} limits the token, not code execution.
+    #
+    # GitHub's public-repo default only gates *first-time* contributors, so one
+    # trivial merged PR is enough to unlock this for a later one. Fork PRs get a
+    # maintainer-triggered workflow_dispatch run instead.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     # Runner must be darwin/arm64 with Xcode CLT and rustup (same requirements
     # as macos-release.yml, which this intentionally does not replace -- this
     # only builds/checks, never signs, packages, or uploads anything).

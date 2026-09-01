@@ -337,8 +337,6 @@ const en = {
 
   "panels.analysis": "Analysis",
 
-  "panels.clickToCollapse": "Click to collapse",
-
   "panels.timeline": "Timeline",
 
   "panels.analysisTitle": "Show or hide the track analysis",
@@ -346,6 +344,12 @@ const en = {
   "panels.sectionsTitle": "Show or hide the sections bar",
 
   "panels.timelineTitle": "Show or hide the timeline",
+
+  "panels.all": "All",
+
+  "panels.collapse": "Collapse",
+
+  "panels.allTitle": "Show or hide every panel and the library",
   "mixer.hint": "Drag fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -413,8 +417,9 @@ const en = {
 
   "position.group": "Position",
   "position.loopTitle": "Loop the selected position (L)",
-  "position.loopLabel": "Loop position",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Exact loop start / end (mm:ss.mmm or seconds)",
+  "position.loopScrollHint": "Scroll up/down to adjust",
   "position.loopStartAria": "Loop start",
   "position.loopEndAria": "Loop end",
 
@@ -426,7 +431,6 @@ const en = {
   "speed.ariaLabel": "Playback speed",
 
   "click.group": "Click track",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Click track (K)",
   "click.toggleAria": "Click track",
   "click.unavailableAria": "Click track unavailable",
@@ -466,6 +470,23 @@ const en = {
   "friends.title": "We Recommend",
   "friends.tagline": "Wonderful people doing beautiful work. Go meet them ❤️",
   "friends.closeAria": "Close friends dialog",
+  "friends.cat.artists": "Artists & Creators",
+  "friends.cat.builders": "Instrument Builders & Repair",
+  "friends.cat.gear": "Music Gear",
+  "friends.cat.karaoke": "Music & Karaoke Technology",
+  "friends.cat.media": "Media & Community",
+  "friends.role.joaoGaspar": "Producer, film scorer, touring/session musician",
+  "friends.role.moreNotesLessTalk": "Gear-focused creative project with a raw, tape-recorded identity",
+  "friends.role.dlimaGuitars": "Custom guitars and basses",
+  "friends.role.lisbonGuitarWorks": "Handmade guitars in Lisbon",
+  "friends.role.krisLuthier": "Instrument repair and restoration",
+  "friends.role.analog4lyfe": "Analog gear specialist",
+  "friends.role.empressEffects": "Boutique effects pedals",
+  "friends.role.thomann": "Large music-equipment retailer",
+  "friends.role.beltr": "Local, subscription-free karaoke software",
+  "friends.role.seratone": "TV-based karaoke system",
+  "friends.role.slashcam": "Camera, video, and post-production media",
+  "friends.role.rbass": "Bass-player community",
 
   "release.title": "New release available",
   "release.closeAria": "Close release dialog",
@@ -599,6 +620,7 @@ const en = {
   "settings.exportLogs.error": "Could not export the logs.",
   "status.unavailable": "unavailable",
 
+  "library.deleteFailed": "{count} track(s) could not be deleted. They stay out of your library, but their files may still be on disk.",
   "settings.resetData.title": "Reset app data",
   "settings.resetData.desc": "Permanently deletes every track, job, and library entry. On a shared server this affects everyone who uses it. Cannot be undone.",
   "settings.resetData.button": "Reset app data…",
@@ -902,8 +924,6 @@ const pl = {
 
   "panels.analysis": "Analiza",
 
-  "panels.clickToCollapse": "Kliknij, aby zwinąć",
-
   "panels.timeline": "Oś czasu",
 
   "panels.analysisTitle": "Pokaż lub ukryj analizę utworu",
@@ -911,6 +931,12 @@ const pl = {
   "panels.sectionsTitle": "Pokaż lub ukryj pasek sekcji",
 
   "panels.timelineTitle": "Pokaż lub ukryj oś czasu",
+
+  "panels.all": "Wszystko",
+
+  "panels.collapse": "Zwiń",
+
+  "panels.allTitle": "Pokaż lub ukryj wszystkie panele i bibliotekę",
   "mixer.hint": "Przeciągnij suwak · M/S",
   "stemsPanel.ariaLabel": "Ścieżki",
 
@@ -976,8 +1002,9 @@ const pl = {
 
   "position.group": "Pozycja",
   "position.loopTitle": "Zapętl zaznaczoną pozycję (L)",
-  "position.loopLabel": "Pętla pozycji",
+  "position.loopLabel": "Pętla",
   "position.loopExactTitle": "Dokładny początek / koniec pętli (mm:ss.mmm lub sekundy)",
+  "position.loopScrollHint": "Przewiń, aby dostosować",
   "position.loopStartAria": "Początek pętli",
   "position.loopEndAria": "Koniec pętli",
 
@@ -989,7 +1016,6 @@ const pl = {
   "speed.ariaLabel": "Prędkość odtwarzania",
 
   "click.group": "Metronom",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Metronom (K)",
   "click.toggleAria": "Metronom",
   "click.unavailableAria": "Metronom niedostępny",
@@ -1029,6 +1055,23 @@ const pl = {
   "friends.title": "Polecamy",
   "friends.tagline": "Wspaniali ludzie tworzący piękne rzeczy. Poznaj ich ❤️",
   "friends.closeAria": "Zamknij okno poleceń",
+  "friends.cat.artists": "Artyści i twórcy",
+  "friends.cat.builders": "Lutnicy i naprawa instrumentów",
+  "friends.cat.gear": "Sprzęt muzyczny",
+  "friends.cat.karaoke": "Technologie muzyczne i karaoke",
+  "friends.cat.media": "Media i społeczność",
+  "friends.role.joaoGaspar": "Producent, kompozytor muzyki filmowej, muzyk koncertowy i sesyjny",
+  "friends.role.moreNotesLessTalk": "Projekt twórczy skupiony na sprzęcie, o surowym brzmieniu nagranym na taśmę",
+  "friends.role.dlimaGuitars": "Gitary i basy na zamówienie",
+  "friends.role.lisbonGuitarWorks": "Gitary robione ręcznie w Lizbonie",
+  "friends.role.krisLuthier": "Naprawa i renowacja instrumentów",
+  "friends.role.analog4lyfe": "Specjalista od sprzętu analogowego",
+  "friends.role.empressEffects": "Butikowe efekty gitarowe",
+  "friends.role.thomann": "Duży sklep ze sprzętem muzycznym",
+  "friends.role.beltr": "Lokalne karaoke bez abonamentu",
+  "friends.role.seratone": "System karaoke na telewizor",
+  "friends.role.slashcam": "Media o kamerach, wideo i postprodukcji",
+  "friends.role.rbass": "Społeczność basistów",
 
   "release.title": "Dostępna nowa wersja",
   "release.closeAria": "Zamknij okno wydania",
@@ -1123,6 +1166,7 @@ const pl = {
   "library.importedFile": "Zaimportowany plik",
   "library.syncing": "Synchronizowanie…",
   "library.syncFailed": "Synchronizacja nie powiodła się — sprawdź połączenie.",
+  "library.deleteFailed": "Nie udało się usunąć {count} utworów. Nie ma ich już w bibliotece, ale ich pliki mogą nadal być na dysku.",
   "library.recent": "Ostatnie",
   "library.stemCollections": "Kolekcje ścieżek",
   "library.tags": "Tagi",
@@ -1457,8 +1501,6 @@ const ja = {
 
   "panels.analysis": "解析",
 
-  "panels.clickToCollapse": "クリックで折りたたみ",
-
   "panels.timeline": "タイムライン",
 
   "panels.analysisTitle": "トラック解析の表示を切り替えます",
@@ -1466,6 +1508,12 @@ const ja = {
   "panels.sectionsTitle": "セクションバーの表示を切り替えます",
 
   "panels.timelineTitle": "タイムラインの表示を切り替えます",
+
+  "panels.all": "すべて",
+
+  "panels.collapse": "折りたたむ",
+
+  "panels.allTitle": "すべてのパネルとライブラリの表示を切り替えます",
   "mixer.hint": "フェーダーをドラッグ · M/S",
   "stemsPanel.ariaLabel": "パート",
 
@@ -1530,8 +1578,9 @@ const ja = {
 
   "position.group": "位置",
   "position.loopTitle": "選択した位置をループ (L)",
-  "position.loopLabel": "位置をループ",
+  "position.loopLabel": "ループ",
   "position.loopExactTitle": "正確なループ開始/終了 (mm:ss.mmm または秒)",
+  "position.loopScrollHint": "スクロールで調整",
   "position.loopStartAria": "ループ開始",
   "position.loopEndAria": "ループ終了",
 
@@ -1543,7 +1592,6 @@ const ja = {
   "speed.ariaLabel": "再生速度",
 
   "click.group": "クリックトラック",
-  "click.alpha": "アルファ",
   "click.toggleTitle": "クリックトラック (K)",
   "click.toggleAria": "クリックトラック",
   "click.unavailableAria": "クリックトラック利用不可",
@@ -1583,6 +1631,23 @@ const ja = {
   "friends.title": "おすすめ",
   "friends.tagline": "美しい仕事をする素晴らしい人たち。ぜひ会いに行ってみてください ❤️",
   "friends.closeAria": "おすすめダイアログを閉じる",
+  "friends.cat.artists": "アーティストとクリエイター",
+  "friends.cat.builders": "楽器製作とリペア",
+  "friends.cat.gear": "音楽機材",
+  "friends.cat.karaoke": "音楽とカラオケの技術",
+  "friends.cat.media": "メディアとコミュニティ",
+  "friends.role.joaoGaspar": "プロデューサー、映画音楽家、ツアー/セッションミュージシャン",
+  "friends.role.moreNotesLessTalk": "機材を軸に、テープ録音の生々しさを大切にするクリエイティブプロジェクト",
+  "friends.role.dlimaGuitars": "オーダーメイドのギターとベース",
+  "friends.role.lisbonGuitarWorks": "リスボンの手作りギター",
+  "friends.role.krisLuthier": "楽器のリペアとレストア",
+  "friends.role.analog4lyfe": "アナログ機材のスペシャリスト",
+  "friends.role.empressEffects": "ブティック系エフェクターペダル",
+  "friends.role.thomann": "大手の楽器機材販売店",
+  "friends.role.beltr": "サブスク不要、ローカルで動くカラオケソフト",
+  "friends.role.seratone": "テレビで使えるカラオケシステム",
+  "friends.role.slashcam": "カメラ、映像、ポストプロダクションのメディア",
+  "friends.role.rbass": "ベーシストのコミュニティ",
 
   "release.title": "新しいリリースがあります",
   "release.closeAria": "リリースダイアログを閉じる",
@@ -1671,6 +1736,7 @@ const ja = {
   "library.importedFile": "インポートされたファイル",
   "library.syncing": "同期中…",
   "library.syncFailed": "同期に失敗しました — 接続を確認してください。",
+  "library.deleteFailed": "{count} 曲を削除できませんでした。ライブラリからは外れていますが、ファイルはディスクに残っている可能性があります。",
   "library.recent": "最近",
   "library.stemCollections": "パートコレクション",
   "library.tags": "タグ",
@@ -1987,8 +2053,6 @@ const zhHans = {
 
   "panels.analysis": "分析",
 
-  "panels.clickToCollapse": "点击可折叠",
-
   "panels.timeline": "时间轴",
 
   "panels.analysisTitle": "显示或隐藏音轨分析",
@@ -1996,6 +2060,12 @@ const zhHans = {
   "panels.sectionsTitle": "显示或隐藏段落栏",
 
   "panels.timelineTitle": "显示或隐藏时间轴",
+
+  "panels.all": "全部",
+
+  "panels.collapse": "折叠",
+
+  "panels.allTitle": "显示或隐藏所有面板和音乐库",
   "mixer.hint": "拖动推子 · M/S",
   "stemsPanel.ariaLabel": "音轨",
 
@@ -2060,8 +2130,9 @@ const zhHans = {
 
   "position.group": "位置",
   "position.loopTitle": "循环所选位置 (L)",
-  "position.loopLabel": "循环位置",
+  "position.loopLabel": "循环",
   "position.loopExactTitle": "精确循环起止点 (mm:ss.mmm 或秒)",
+  "position.loopScrollHint": "滚动进行调整",
   "position.loopStartAria": "循环起点",
   "position.loopEndAria": "循环终点",
 
@@ -2073,7 +2144,6 @@ const zhHans = {
   "speed.ariaLabel": "播放速度",
 
   "click.group": "节拍器",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "节拍器 (K)",
   "click.toggleAria": "节拍器",
   "click.unavailableAria": "节拍器不可用",
@@ -2113,6 +2183,23 @@ const zhHans = {
   "friends.title": "推荐",
   "friends.tagline": "一群做着美好事情的了不起的人。去认识他们吧 ❤️",
   "friends.closeAria": "关闭推荐对话框",
+  "friends.cat.artists": "艺术家与创作者",
+  "friends.cat.builders": "乐器制作与维修",
+  "friends.cat.gear": "音乐器材",
+  "friends.cat.karaoke": "音乐与卡拉OK技术",
+  "friends.cat.media": "媒体与社区",
+  "friends.role.joaoGaspar": "制作人、电影配乐师、巡演/录音乐手",
+  "friends.role.moreNotesLessTalk": "以器材为主的创作项目，保留磁带录音的粗粝质感",
+  "friends.role.dlimaGuitars": "定制吉他与贝斯",
+  "friends.role.lisbonGuitarWorks": "里斯本手工吉他",
+  "friends.role.krisLuthier": "乐器维修与修复",
+  "friends.role.analog4lyfe": "模拟器材专家",
+  "friends.role.empressEffects": "精品效果器",
+  "friends.role.thomann": "大型乐器器材零售商",
+  "friends.role.beltr": "本地运行、无需订阅的卡拉OK软件",
+  "friends.role.seratone": "基于电视的卡拉OK系统",
+  "friends.role.slashcam": "相机、视频与后期制作媒体",
+  "friends.role.rbass": "贝斯手社区",
 
   "release.title": "有新版本可用",
   "release.closeAria": "关闭版本对话框",
@@ -2201,6 +2288,7 @@ const zhHans = {
   "library.importedFile": "已导入的文件",
   "library.syncing": "正在同步…",
   "library.syncFailed": "同步失败 — 请检查你的网络连接。",
+  "library.deleteFailed": "有 {count} 首曲目未能删除。它们已不在音乐库中，但文件可能仍在磁盘上。",
   "library.recent": "最近",
   "library.stemCollections": "音轨合集",
   "library.tags": "标签",
@@ -2517,8 +2605,6 @@ const de = {
 
   "panels.analysis": "Analyse",
 
-  "panels.clickToCollapse": "Zum Einklappen klicken",
-
   "panels.timeline": "Zeitleiste",
 
   "panels.analysisTitle": "Track-Analyse ein- oder ausblenden",
@@ -2526,6 +2612,12 @@ const de = {
   "panels.sectionsTitle": "Abschnittsleiste ein- oder ausblenden",
 
   "panels.timelineTitle": "Zeitleiste ein- oder ausblenden",
+
+  "panels.all": "Alle",
+
+  "panels.collapse": "Einklappen",
+
+  "panels.allTitle": "Alle Bereiche und die Bibliothek ein- oder ausblenden",
   "mixer.hint": "Fader ziehen · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -2591,8 +2683,9 @@ const de = {
 
   "position.group": "Position",
   "position.loopTitle": "Ausgewählte Position loopen (L)",
-  "position.loopLabel": "Loop-Position",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Genauer Loop-Start/-Ende (mm:ss.mmm oder Sekunden)",
+  "position.loopScrollHint": "Zum Anpassen scrollen",
   "position.loopStartAria": "Loop-Start",
   "position.loopEndAria": "Loop-Ende",
 
@@ -2604,7 +2697,6 @@ const de = {
   "speed.ariaLabel": "Wiedergabegeschwindigkeit",
 
   "click.group": "Click-Track",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Click-Track (K)",
   "click.toggleAria": "Click-Track",
   "click.unavailableAria": "Click-Track nicht verfügbar",
@@ -2644,6 +2736,23 @@ const de = {
   "friends.title": "Wir empfehlen",
   "friends.tagline": "Wunderbare Menschen, die schöne Arbeit leisten. Lern sie kennen ❤️",
   "friends.closeAria": "Empfehlungsdialog schließen",
+  "friends.cat.artists": "Künstler und Kreative",
+  "friends.cat.builders": "Instrumentenbau und Reparatur",
+  "friends.cat.gear": "Musik-Equipment",
+  "friends.cat.karaoke": "Musik- und Karaoke-Technik",
+  "friends.cat.media": "Medien und Community",
+  "friends.role.joaoGaspar": "Produzent, Filmkomponist, Tour- und Sessionmusiker",
+  "friends.role.moreNotesLessTalk": "Kreativprojekt rund um Equipment, roh auf Band aufgenommen",
+  "friends.role.dlimaGuitars": "Gitarren und Bässe nach Maß",
+  "friends.role.lisbonGuitarWorks": "Handgebaute Gitarren aus Lissabon",
+  "friends.role.krisLuthier": "Reparatur und Restaurierung von Instrumenten",
+  "friends.role.analog4lyfe": "Spezialist für analoges Equipment",
+  "friends.role.empressEffects": "Boutique-Effektpedale",
+  "friends.role.thomann": "Großer Händler für Musik-Equipment",
+  "friends.role.beltr": "Lokale Karaoke-Software ohne Abo",
+  "friends.role.seratone": "Karaoke-System für den Fernseher",
+  "friends.role.slashcam": "Medien zu Kamera, Video und Postproduktion",
+  "friends.role.rbass": "Community für Bassistinnen und Bassisten",
 
   "release.title": "Neue Version verfügbar",
   "release.closeAria": "Versionsdialog schließen",
@@ -2735,6 +2844,7 @@ const de = {
   "library.importedFile": "Importierte Datei",
   "library.syncing": "Wird synchronisiert…",
   "library.syncFailed": "Synchronisierung fehlgeschlagen — Verbindung prüfen.",
+  "library.deleteFailed": "{count} Titel konnten nicht gelöscht werden. Sie bleiben aus deiner Bibliothek entfernt, ihre Dateien liegen aber möglicherweise noch auf der Festplatte.",
   "library.recent": "Zuletzt verwendet",
   "library.stemCollections": "Stem-Sammlungen",
   "library.tags": "Tags",
@@ -3058,8 +3168,6 @@ const pt = {
 
   "panels.analysis": "Análise",
 
-  "panels.clickToCollapse": "Clique para recolher",
-
   "panels.timeline": "Linha do tempo",
 
   "panels.analysisTitle": "Mostrar ou ocultar a análise da faixa",
@@ -3067,6 +3175,12 @@ const pt = {
   "panels.sectionsTitle": "Mostrar ou ocultar a barra de seções",
 
   "panels.timelineTitle": "Mostrar ou ocultar a linha do tempo",
+
+  "panels.all": "Tudo",
+
+  "panels.collapse": "Recolher",
+
+  "panels.allTitle": "Mostrar ou ocultar todos os painéis e a biblioteca",
   "mixer.hint": "Arraste o fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -3132,8 +3246,9 @@ const pt = {
 
   "position.group": "Posição",
   "position.loopTitle": "Repetir a posição selecionada (L)",
-  "position.loopLabel": "Posição de loop",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Início/fim exato do loop (mm:ss.mmm ou segundos)",
+  "position.loopScrollHint": "Role para ajustar",
   "position.loopStartAria": "Início do loop",
   "position.loopEndAria": "Fim do loop",
 
@@ -3145,7 +3260,6 @@ const pt = {
   "speed.ariaLabel": "Velocidade de reprodução",
 
   "click.group": "Clique de referência",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Clique de referência (K)",
   "click.toggleAria": "Clique de referência",
   "click.unavailableAria": "Clique de referência indisponível",
@@ -3185,6 +3299,23 @@ const pt = {
   "friends.title": "Recomendamos",
   "friends.tagline": "Pessoas maravilhosas fazendo um trabalho lindo. Conheça-as ❤️",
   "friends.closeAria": "Fechar diálogo de recomendações",
+  "friends.cat.artists": "Artistas e criadores",
+  "friends.cat.builders": "Luteria e reparos",
+  "friends.cat.gear": "Equipamentos musicais",
+  "friends.cat.karaoke": "Tecnologia musical e karaokê",
+  "friends.cat.media": "Mídia e comunidade",
+  "friends.role.joaoGaspar": "Produtor, compositor de trilhas, músico de turnê e de estúdio",
+  "friends.role.moreNotesLessTalk": "Projeto criativo focado em equipamentos, com identidade crua gravada em fita",
+  "friends.role.dlimaGuitars": "Guitarras e baixos sob medida",
+  "friends.role.lisbonGuitarWorks": "Guitarras feitas à mão em Lisboa",
+  "friends.role.krisLuthier": "Reparo e restauração de instrumentos",
+  "friends.role.analog4lyfe": "Especialista em equipamentos analógicos",
+  "friends.role.empressEffects": "Pedais de efeito boutique",
+  "friends.role.thomann": "Grande varejista de equipamentos musicais",
+  "friends.role.beltr": "Software de karaokê local, sem assinatura",
+  "friends.role.seratone": "Sistema de karaokê para TV",
+  "friends.role.slashcam": "Mídia sobre câmera, vídeo e pós-produção",
+  "friends.role.rbass": "Comunidade de baixistas",
 
   "release.title": "Nova versão disponível",
   "release.closeAria": "Fechar diálogo de versão",
@@ -3276,6 +3407,7 @@ const pt = {
   "library.importedFile": "Arquivo importado",
   "library.syncing": "Sincronizando…",
   "library.syncFailed": "Falha na sincronização — verifique sua conexão.",
+  "library.deleteFailed": "Não foi possível excluir {count} faixa(s). Elas ficam fora da sua biblioteca, mas os arquivos podem continuar no disco.",
   "library.recent": "Recentes",
   "library.stemCollections": "Coleções de stems",
   "library.tags": "Tags",
@@ -3601,8 +3733,6 @@ const id = {
 
   "panels.analysis": "Analisis",
 
-  "panels.clickToCollapse": "Klik untuk menciutkan",
-
   "panels.timeline": "Lini masa",
 
   "panels.analysisTitle": "Tampilkan atau sembunyikan analisis trek",
@@ -3610,6 +3740,12 @@ const id = {
   "panels.sectionsTitle": "Tampilkan atau sembunyikan bilah bagian",
 
   "panels.timelineTitle": "Tampilkan atau sembunyikan lini masa",
+
+  "panels.all": "Semua",
+
+  "panels.collapse": "Ciutkan",
+
+  "panels.allTitle": "Tampilkan atau sembunyikan semua panel dan pustaka",
   "mixer.hint": "Seret fader · M/S",
   "stemsPanel.ariaLabel": "Stem",
 
@@ -3674,8 +3810,9 @@ const id = {
 
   "position.group": "Posisi",
   "position.loopTitle": "Loop posisi yang dipilih (L)",
-  "position.loopLabel": "Posisi loop",
+  "position.loopLabel": "Loop",
   "position.loopExactTitle": "Awal/akhir loop yang tepat (mm:ss.mmm atau detik)",
+  "position.loopScrollHint": "Gulir untuk menyesuaikan",
   "position.loopStartAria": "Awal loop",
   "position.loopEndAria": "Akhir loop",
 
@@ -3687,7 +3824,6 @@ const id = {
   "speed.ariaLabel": "Kecepatan putar",
 
   "click.group": "Click Track",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Click track (K)",
   "click.toggleAria": "Click track",
   "click.unavailableAria": "Click track tidak tersedia",
@@ -3727,6 +3863,23 @@ const id = {
   "friends.title": "Rekomendasi",
   "friends.tagline": "Orang-orang hebat yang melakukan pekerjaan indah. Temui mereka ❤️",
   "friends.closeAria": "Tutup dialog rekomendasi",
+  "friends.cat.artists": "Artis dan Kreator",
+  "friends.cat.builders": "Pembuat dan Reparasi Instrumen",
+  "friends.cat.gear": "Perangkat Musik",
+  "friends.cat.karaoke": "Teknologi Musik dan Karaoke",
+  "friends.cat.media": "Media dan Komunitas",
+  "friends.role.joaoGaspar": "Produser, penata musik film, musisi tur dan sesi",
+  "friends.role.moreNotesLessTalk": "Proyek kreatif seputar perangkat, dengan karakter mentah rekaman pita",
+  "friends.role.dlimaGuitars": "Gitar dan bas custom",
+  "friends.role.lisbonGuitarWorks": "Gitar buatan tangan di Lisbon",
+  "friends.role.krisLuthier": "Reparasi dan restorasi instrumen",
+  "friends.role.analog4lyfe": "Spesialis perangkat analog",
+  "friends.role.empressEffects": "Pedal efek butik",
+  "friends.role.thomann": "Peritel besar perangkat musik",
+  "friends.role.beltr": "Perangkat lunak karaoke lokal tanpa langganan",
+  "friends.role.seratone": "Sistem karaoke berbasis TV",
+  "friends.role.slashcam": "Media seputar kamera, video, dan pascaproduksi",
+  "friends.role.rbass": "Komunitas pemain bas",
 
   "release.title": "Versi baru tersedia",
   "release.closeAria": "Tutup dialog versi",
@@ -3815,6 +3968,7 @@ const id = {
   "library.importedFile": "File yang diimpor",
   "library.syncing": "Menyinkronkan…",
   "library.syncFailed": "Sinkronisasi gagal — periksa koneksi Anda.",
+  "library.deleteFailed": "{count} lagu tidak dapat dihapus. Lagu-lagu itu tetap di luar pustaka Anda, tetapi berkasnya mungkin masih ada di disk.",
   "library.recent": "Terbaru",
   "library.stemCollections": "Koleksi Stem",
   "library.tags": "Tag",
@@ -4131,8 +4285,6 @@ const fr = {
 
   "panels.analysis": "Analyse",
 
-  "panels.clickToCollapse": "Cliquez pour réduire",
-
   "panels.timeline": "Chronologie",
 
   "panels.analysisTitle": "Afficher ou masquer l'analyse du morceau",
@@ -4140,6 +4292,12 @@ const fr = {
   "panels.sectionsTitle": "Afficher ou masquer la barre de sections",
 
   "panels.timelineTitle": "Afficher ou masquer la chronologie",
+
+  "panels.all": "Tout",
+
+  "panels.collapse": "Réduire",
+
+  "panels.allTitle": "Afficher ou masquer tous les panneaux et la bibliothèque",
   "mixer.hint": "Glissez le fader · M/S",
   "stemsPanel.ariaLabel": "Pistes",
 
@@ -4205,8 +4363,9 @@ const fr = {
 
   "position.group": "Position",
   "position.loopTitle": "Boucler la position sélectionnée (L)",
-  "position.loopLabel": "Boucler la position",
+  "position.loopLabel": "Boucle",
   "position.loopExactTitle": "Début / fin exacts de la boucle (mm:ss.mmm ou secondes)",
+  "position.loopScrollHint": "Faites défiler pour régler",
   "position.loopStartAria": "Début de la boucle",
   "position.loopEndAria": "Fin de la boucle",
 
@@ -4218,7 +4377,6 @@ const fr = {
   "speed.ariaLabel": "Vitesse de lecture",
 
   "click.group": "Métronome",
-  "click.alpha": "Alpha",
   "click.toggleTitle": "Métronome (K)",
   "click.toggleAria": "Métronome",
   "click.unavailableAria": "Métronome indisponible",
@@ -4258,6 +4416,23 @@ const fr = {
   "friends.title": "Nos recommandations",
   "friends.tagline": "Des gens formidables qui font de belles choses. Allez les rencontrer ❤️",
   "friends.closeAria": "Fermer la fenêtre des recommandations",
+  "friends.cat.artists": "Artistes et créateurs",
+  "friends.cat.builders": "Lutherie et réparation",
+  "friends.cat.gear": "Matériel de musique",
+  "friends.cat.karaoke": "Technologies musicales et karaoké",
+  "friends.cat.media": "Médias et communauté",
+  "friends.role.joaoGaspar": "Producteur, compositeur de musique de film, musicien de tournée et de studio",
+  "friends.role.moreNotesLessTalk": "Projet créatif axé sur le matériel, à l'identité brute enregistrée sur bande",
+  "friends.role.dlimaGuitars": "Guitares et basses sur mesure",
+  "friends.role.lisbonGuitarWorks": "Guitares faites main à Lisbonne",
+  "friends.role.krisLuthier": "Réparation et restauration d'instruments",
+  "friends.role.analog4lyfe": "Spécialiste du matériel analogique",
+  "friends.role.empressEffects": "Pédales d'effets boutique",
+  "friends.role.thomann": "Grand détaillant de matériel de musique",
+  "friends.role.beltr": "Logiciel de karaoké local, sans abonnement",
+  "friends.role.seratone": "Système de karaoké sur téléviseur",
+  "friends.role.slashcam": "Médias sur la caméra, la vidéo et la postproduction",
+  "friends.role.rbass": "Communauté de bassistes",
 
   "release.title": "Nouvelle version disponible",
   "release.closeAria": "Fermer la fenêtre de version",
@@ -4350,6 +4525,7 @@ const fr = {
   "library.importedFile": "Fichier importé",
   "library.syncing": "Synchronisation…",
   "library.syncFailed": "Échec de la synchronisation — vérifiez votre connexion.",
+  "library.deleteFailed": "{count} morceau(x) n'ont pas pu être supprimés. Ils restent hors de votre bibliothèque, mais leurs fichiers peuvent encore se trouver sur le disque.",
   "library.recent": "Récents",
   "library.stemCollections": "Collections de pistes",
   "library.tags": "Tags",
@@ -4558,6 +4734,7 @@ const fr = {
 // through pt (see FALLBACK), so the two variants cannot drift and a key
 // added to pt later is picked up here rather than reverting to English.
 const ptPT = {
+  "position.loopScrollHint": "Desloque para ajustar",
   "settings.autoDelete.title": "Eliminar automaticamente as faixas concluídas",
   "pitch.resetTitle": "Repor todas as faixas no tom original",
   "settings.autoDelete.desc": "Desativado por predefinição. As faixas separadas são mantidas para sempre. A eliminação não pode ser anulada.",
@@ -4592,6 +4769,7 @@ const ptPT = {
   "settings.logs.backendAria": "Log do backend (só de leitura)",
   "settings.logs.backend.desc": "A última hora de <code>backend.log</code>, saída bruta do processo Python incorporado, incluindo qualquer coisa que o tenha bloqueado antes de o log da aplicação conseguir registar. Apenas app desktop. Só de leitura.",
   "library.syncFailed": "Falha na sincronização, verifique a sua ligação.",
+  "library.deleteFailed": "Não foi possível eliminar {count} faixa(s). Ficam fora da sua biblioteca, mas os ficheiros podem continuar no disco.",
   "resetConfirm.failedConnection": "Falha ao repor, verifique a sua ligação.",
   "search.failed": "A pesquisa falhou. Verifique a sua ligação.",
   "settings.network.noConnection": "Nenhuma ligação de rede local detetada.",
@@ -4651,6 +4829,15 @@ const ptPT = {
   "settings.stemsLocation.movedPersistFailed.one": "{count} item movido, mas o StemDeck não conseguiu guardar isto como o novo local (verifique se a pasta é gravável). Reiniciar agora reverteria para o local antigo. Tente definir novamente.",
   "settings.stemsLocation.movedPersistFailed.other": "{count} itens movidos, mas o StemDeck não conseguiu guardar isto como o novo local (verifique se a pasta é gravável). Reiniciar agora reverteria para o local antigo. Tente definir novamente.",
   "failure.hint": "Estes detalhes vão para o relatório. O título da faixa e o link de origem não são incluídos, adicione-os se ajudar. Clicar num botão abaixo copia isto para a área de transferência.",
+  "friends.cat.builders": "Luteria e reparações",
+  "friends.cat.karaoke": "Tecnologia musical e karaoke",
+  "friends.cat.media": "Media e comunidade",
+  "friends.role.joaoGaspar": "Produtor, compositor de bandas sonoras, músico de digressão e de estúdio",
+  "friends.role.krisLuthier": "Reparação e restauro de instrumentos",
+  "friends.role.thomann": "Grande retalhista de equipamento musical",
+  "friends.role.beltr": "Software de karaoke local, sem subscrição",
+  "friends.role.seratone": "Sistema de karaoke para TV",
+  "friends.role.slashcam": "Media sobre câmara, vídeo e pós-produção",
 };
 
 const es = {
@@ -4773,8 +4960,6 @@ const es = {
 
   "panels.analysis": "Análisis",
 
-  "panels.clickToCollapse": "Haz clic para contraer",
-
   "panels.timeline": "Línea de tiempo",
 
   "panels.analysisTitle": "Mostrar u ocultar el análisis de la pista",
@@ -4782,6 +4967,12 @@ const es = {
   "panels.sectionsTitle": "Mostrar u ocultar la barra de secciones",
 
   "panels.timelineTitle": "Mostrar u ocultar la línea de tiempo",
+
+  "panels.all": "Todo",
+
+  "panels.collapse": "Contraer",
+
+  "panels.allTitle": "Mostrar u ocultar todos los paneles y la biblioteca",
   "mixer.hint": "Arrastra el fader · M/S",
   "stemsPanel.ariaLabel": "Stems",
 
@@ -4847,8 +5038,9 @@ const es = {
 
   "position.group": "Posición",
   "position.loopTitle": "Repetir en loop la posición seleccionada (L)",
-  "position.loopLabel": "Loop de la posición",
+  "position.loopLabel": "Bucle",
   "position.loopExactTitle": "Inicio / fin exacto del loop (mm:ss.mmm o segundos)",
+  "position.loopScrollHint": "Desplaza para ajustar",
   "position.loopStartAria": "Inicio del loop",
   "position.loopEndAria": "Fin del loop",
 
@@ -4860,7 +5052,6 @@ const es = {
   "speed.ariaLabel": "Velocidad",
 
   "click.group": "Click",
-  "click.alpha": "Alfa",
   "click.toggleTitle": "Click (K)",
   "click.toggleAria": "Click",
   "click.unavailableAria": "Click no disponible",
@@ -4900,6 +5091,23 @@ const es = {
   "friends.title": "Recomendamos",
   "friends.tagline": "Gente maravillosa haciendo un trabajo precioso. Ve a saludarlos ❤️",
   "friends.closeAria": "Cerrar el diálogo de recomendaciones",
+  "friends.cat.artists": "Artistas y creadores",
+  "friends.cat.builders": "Luthería y reparación",
+  "friends.cat.gear": "Equipo musical",
+  "friends.cat.karaoke": "Tecnología musical y karaoke",
+  "friends.cat.media": "Medios y comunidad",
+  "friends.role.joaoGaspar": "Productor, compositor de bandas sonoras, músico de gira y de sesión",
+  "friends.role.moreNotesLessTalk": "Proyecto creativo centrado en el equipo, con una identidad cruda grabada en cinta",
+  "friends.role.dlimaGuitars": "Guitarras y bajos a medida",
+  "friends.role.lisbonGuitarWorks": "Guitarras hechas a mano en Lisboa",
+  "friends.role.krisLuthier": "Reparación y restauración de instrumentos",
+  "friends.role.analog4lyfe": "Especialista en equipo analógico",
+  "friends.role.empressEffects": "Pedales de efectos boutique",
+  "friends.role.thomann": "Gran tienda de equipo musical",
+  "friends.role.beltr": "Software de karaoke local y sin suscripción",
+  "friends.role.seratone": "Sistema de karaoke para televisión",
+  "friends.role.slashcam": "Medios sobre cámara, vídeo y posproducción",
+  "friends.role.rbass": "Comunidad de bajistas",
 
   "release.title": "Nueva versión disponible",
   "release.closeAria": "Cerrar el diálogo de la versión",
@@ -4992,6 +5200,7 @@ const es = {
   "library.importedFile": "Archivo importado",
   "library.syncing": "Sincronizando…",
   "library.syncFailed": "La sincronización falló — revisa tu conexión.",
+  "library.deleteFailed": "No se pudieron eliminar {count} pista(s). Se quedan fuera de tu biblioteca, pero sus archivos pueden seguir en el disco.",
   "library.recent": "Recientes",
   "library.stemCollections": "Colecciones de stems",
   "library.tags": "Etiquetas",
@@ -5337,8 +5546,6 @@ const ko = {
 
   "panels.analysis": "분석",
 
-  "panels.clickToCollapse": "눌러서 접기",
-
   "panels.timeline": "타임라인",
 
   "panels.analysisTitle": "트랙 분석 표시하거나 숨기기",
@@ -5346,6 +5553,12 @@ const ko = {
   "panels.sectionsTitle": "구간 막대 표시하거나 숨기기",
 
   "panels.timelineTitle": "타임라인 표시하거나 숨기기",
+
+  "panels.all": "전체",
+
+  "panels.collapse": "접기",
+
+  "panels.allTitle": "모든 패널과 라이브러리 표시하거나 숨기기",
   "mixer.hint": "페이더 드래그 · M/S",
   "stemsPanel.ariaLabel": "스템",
 
@@ -5410,8 +5623,9 @@ const ko = {
 
   "position.group": "위치",
   "position.loopTitle": "선택한 구간을 반복해요 (L)",
-  "position.loopLabel": "구간 반복",
+  "position.loopLabel": "반복",
   "position.loopExactTitle": "반복 시작과 끝을 정확히 (mm:ss.mmm 또는 초)",
+  "position.loopScrollHint": "스크롤로 조절",
   "position.loopStartAria": "반복 시작",
   "position.loopEndAria": "반복 끝",
 
@@ -5423,7 +5637,6 @@ const ko = {
   "speed.ariaLabel": "재생 속도",
 
   "click.group": "클릭 트랙",
-  "click.alpha": "알파",
   "click.toggleTitle": "클릭 트랙 (K)",
   "click.toggleAria": "클릭 트랙",
   "click.unavailableAria": "클릭 트랙을 쓸 수 없음",
@@ -5463,6 +5676,23 @@ const ko = {
   "friends.title": "추천",
   "friends.tagline": "좋은 일을 하는 멋진 사람들이에요. 한번 만나 보세요 ❤️",
   "friends.closeAria": "추천 창 닫기",
+  "friends.cat.artists": "아티스트와 크리에이터",
+  "friends.cat.builders": "악기 제작과 수리",
+  "friends.cat.gear": "음악 장비",
+  "friends.cat.karaoke": "음악과 노래방 기술",
+  "friends.cat.media": "미디어와 커뮤니티",
+  "friends.role.joaoGaspar": "프로듀서, 영화 음악 작곡가, 투어 및 세션 뮤지션",
+  "friends.role.moreNotesLessTalk": "장비를 중심으로 테이프 녹음의 거친 질감을 살린 창작 프로젝트",
+  "friends.role.dlimaGuitars": "주문 제작 기타와 베이스",
+  "friends.role.lisbonGuitarWorks": "리스본에서 손으로 만드는 기타",
+  "friends.role.krisLuthier": "악기 수리와 복원",
+  "friends.role.analog4lyfe": "아날로그 장비 전문",
+  "friends.role.empressEffects": "부티크 이펙터 페달",
+  "friends.role.thomann": "대형 음악 장비 판매점",
+  "friends.role.beltr": "구독이 필요 없는 로컬 노래방 소프트웨어",
+  "friends.role.seratone": "TV 기반 노래방 시스템",
+  "friends.role.slashcam": "카메라, 영상, 후반 작업 미디어",
+  "friends.role.rbass": "베이시스트 커뮤니티",
 
   "release.title": "새 버전이 나왔어요",
   "release.closeAria": "릴리스 창 닫기",
@@ -5551,6 +5781,7 @@ const ko = {
   "library.importedFile": "가져온 파일",
   "library.syncing": "동기화 중…",
   "library.syncFailed": "동기화하지 못했어요. 연결을 확인해 주세요.",
+  "library.deleteFailed": "{count}곡을 삭제하지 못했습니다. 라이브러리에서는 빠졌지만 파일은 디스크에 남아 있을 수 있습니다.",
   "library.recent": "최근",
   "library.stemCollections": "스템 모음",
   "library.tags": "태그",

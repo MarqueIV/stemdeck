@@ -14,6 +14,7 @@ from app.core.config import DEMUCS_MODEL, TIMEOUT_FFMPEG
 from app.core.models import Job, JobCancelled, _set
 from app.core.redact import redact
 from app.core.registry import persist as persist_registry
+from app.core.registry import set_proc
 from app.pipeline.analyze import analyze
 from app.pipeline.beatgrid import compute_beat_grid
 from app.pipeline.collect import (
@@ -49,6 +50,30 @@ def _check_cancel(job: Job) -> None:
         raise JobCancelled()
 
 
+def _run_registered_ffmpeg(job: Job, cmd: list[str], timeout: int) -> tuple[int, bytes]:
+    """Run ffmpeg with the process registered, so cancel can reach it.
+
+    subprocess.run() cannot be interrupted: POST /cancel sets the flag, but
+    nothing looks at it until the call returns, so a cancel during a large
+    upload's transcode was a no-op for up to TIMEOUT_FFMPEG per call -- twice
+    over on the .mp4 path, which runs both this and the video extract (#519).
+
+    Mirrors collect._run_ffmpeg, which registers for exactly this reason.
+    """
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    set_proc(job.id, proc)
+    try:
+        try:
+            _, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise
+        return proc.returncode, stderr or b""
+    finally:
+        set_proc(job.id, None)
+
+
 def _extract_video_track(job: Job, source: Path, job_dir: Path) -> None:
     """For an .mp4 upload, preserve a silent video-only track at
     video.mp4 so the studio can later mux it with a custom stem mix
@@ -76,7 +101,7 @@ def _extract_video_track(job: Job, source: Path, job_dir: Path) -> None:
         str(dest),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT_FFMPEG)
+        returncode, _ = _run_registered_ffmpeg(job, cmd, TIMEOUT_FFMPEG)
     except (OSError, subprocess.SubprocessError) as e:
         # ffmpeg missing or timed out. Distinct from an .mp4 that simply has no
         # video stream, and the only one of the two worth surfacing (#436).
@@ -84,7 +109,7 @@ def _extract_video_track(job: Job, source: Path, job_dir: Path) -> None:
         job.video_status = "failed"
         logger.warning("video extract failed for job %s: %s", job.id, e)
         return
-    if result.returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
+    if returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
         dest.unlink(missing_ok=True)
         job.video_status = "unavailable"
         logger.info("no video track preserved for job %s (source has no video stream?)", job.id)
@@ -127,10 +152,10 @@ def _prepare_local_source(job: Job, source: Path, job_dir: Path) -> Path:
         "-y",
         str(dest),
     ]
-    result = subprocess.run(cmd, capture_output=True, timeout=TIMEOUT_FFMPEG)
-    if result.returncode != 0:
+    returncode, stderr = _run_registered_ffmpeg(job, cmd, TIMEOUT_FFMPEG)
+    if returncode != 0:
         raise RuntimeError(
-            "ffmpeg transcode failed: " + result.stderr.decode("utf-8", errors="replace").strip()
+            "ffmpeg transcode failed: " + stderr.decode("utf-8", errors="replace").strip()
         )
     source.unlink(missing_ok=True)
     return dest

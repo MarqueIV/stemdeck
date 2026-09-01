@@ -24,6 +24,7 @@ import os
 import sys
 
 from app.core.config import VOCAL_SPLIT_MODEL
+from app.core.process import arm_parent_watchdog
 
 
 def _run(device: str, vocals_path: str, out_dir: str) -> None:
@@ -57,6 +58,10 @@ def _run(device: str, vocals_path: str, out_dir: str) -> None:
 
 
 def main() -> None:
+    # A Force-Quit of the app otherwise orphans this process holding the GPU:
+    # onnxruntime reads nothing from stdin mid-inference, so EOF never arrives
+    # and nothing else bounds it (#519).
+    arm_parent_watchdog()
     if len(sys.argv) < 4:
         sys.stderr.write("@@ERROR@@usage: vocal_split_worker <device> <vocals_wav> <out_dir>\n")
         sys.stderr.flush()

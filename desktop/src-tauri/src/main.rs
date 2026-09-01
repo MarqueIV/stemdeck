@@ -16,7 +16,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tar::Archive;
+use tar::{Archive, EntryType};
 use tauri::{Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 #[cfg(windows)]
@@ -111,6 +111,24 @@ const SHAKA_FFPROBE_SHA256_X64: &str =
 #[cfg(all(unix, not(target_os = "macos")))]
 const DEFAULT_LINUX_FFMPEG_URL: &str =
     "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
+// Pinned like the macOS hashes above, because this binary is downloaded,
+// marked executable and run: without it the only thing standing between a
+// compromised or MITM'd host and code execution was that the download
+// completed (#518).
+//
+// Upstream publishes only a .md5 companion, which is both cryptographically
+// broken for collisions and served by the same host as the tarball -- an
+// attacker able to replace one can replace the other, so it evidences
+// corruption, not authenticity. This hash was computed from the artifact whose
+// MD5 matched upstream's published 7fa72b652e19bf84c9461e332ea1cdf3.
+//
+// The URL is a rolling one, so this needs a manual bump when upstream
+// publishes a new build (the current one is dated 2024-08-24). A stale pin
+// fails closed with a checksum error rather than silently accepting whatever
+// arrives; STEMDECK_FFMPEG_URL still overrides both, for anyone who needs it.
+#[cfg(all(unix, not(target_os = "macos")))]
+const DEFAULT_LINUX_FFMPEG_SHA256: &str =
+    "abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67";
 
 struct BackendHandles {
     child: Child,
@@ -1000,8 +1018,14 @@ async fn download_app_update(
         // never install something the current plan did not ask for.
         let _ = fs::remove_file(&app_archive);
 
+        validate_release_url(&plan.app_url)?;
         download_file_with_progress(&plan.app_url, &app_archive, &app_handle).await?;
-        verify_update_sha256(&app_archive, &plan.app_sha256, "app update")
+        verify_update_sha256(&app_archive, &plan.app_sha256, "app update")?;
+        // Record what was verified so apply_app_update can check the bytes it
+        // is about to extract, rather than trusting that whatever now sits at
+        // this path is what this function approved.
+        let _ = fs::write(app_sha_path(&downloads), plan.app_sha256.trim());
+        Ok(())
     }
 }
 
@@ -1010,6 +1034,13 @@ async fn download_app_update(
 /// the frontend) before it is ever extracted. On mismatch the file is removed
 /// so a corrupt or tampered download can never be applied.
 #[cfg(any(windows, target_os = "linux"))]
+/// Where download_app_update records the checksum it verified, so
+/// apply_app_update can re-check the bytes it is about to extract.
+#[cfg(any(windows, target_os = "linux"))]
+fn app_sha_path(downloads: &Path) -> PathBuf {
+    downloads.join(format!("{UPDATE_APP_ARCHIVE}.sha256"))
+}
+
 fn verify_update_sha256(path: &Path, expected: &str, label: &str) -> Result<(), String> {
     let actual = sha256_file(path)?;
     if !actual.eq_ignore_ascii_case(expected.trim()) {
@@ -1181,6 +1212,13 @@ fn apply_app_update(
                 "no downloaded app update found -- call download_app_update first".to_string(),
             );
         }
+        // Re-verify rather than trusting the path. download_app_update checked
+        // these bytes, but anything able to write into data/downloads between
+        // the two calls would otherwise be extracted over the live install
+        // unchecked (#510).
+        let recorded = fs::read_to_string(app_sha_path(&downloads))
+            .map_err(|_| "no verified checksum for the downloaded update -- download it again")?;
+        verify_update_sha256(&app_archive, recorded.trim(), "app update")?;
 
         // ── Phase 1: stage and validate, touching nothing live ──
         //
@@ -2485,6 +2523,38 @@ fn open_url(url: String) -> Result<(), String> {
 
 /// Only localhost URLs, and only http(s). Guards against a compromised WebView
 /// using the desktop shell as an SSRF proxy (#138).
+/// Hosts an in-app update may be fetched from.
+///
+/// GitHub serves release assets from `github.com` and redirects to
+/// `objects.githubusercontent.com`, so both have to be here.
+const RELEASE_ASSET_HOSTS: [&str; 2] = ["github.com", "objects.githubusercontent.com"];
+
+/// Reject an update URL that does not point at our own release assets.
+///
+/// `download_app_update` takes its URL from the WebView, and the SHA-256 it
+/// checks against comes from the same place -- so the checksum proves the file
+/// arrived intact, not that it came from us. Without a host check, anything
+/// able to run script on that page can hand the shell an archive that
+/// `apply_app_update` then extracts over StemDeck's own executable and
+/// backend/ (#510). The page is served over http by the Python backend, which
+/// Tauri treats as a remote origin, and these app-defined commands are not
+/// ACL-gated by the capability config.
+///
+/// Deliberately not `validate_download_url`: that one permits only
+/// 127.0.0.1/localhost, for a different caller, and would reject every real
+/// release URL.
+fn validate_release_url(url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| "invalid update URL".to_string())?;
+    if parsed.scheme() != "https" {
+        return Err("update URLs must use https".to_string());
+    }
+    let host = parsed.host_str().unwrap_or("");
+    if !RELEASE_ASSET_HOSTS.contains(&host) {
+        return Err(format!("refusing to download an update from {host}"));
+    }
+    Ok(())
+}
+
 fn validate_download_url(url: &str) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("only http/https URLs are permitted".to_string());
@@ -3187,13 +3257,34 @@ fn is_apple_double(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with("._"))
 }
 
+/// Stands in for `Archive::unpack`, which cannot be used because it offers no
+/// way to skip an entry. It has to reproduce the two things `unpack` does
+/// beyond looping over entries, both of which the first version of this
+/// function dropped:
+///
+/// 1. **Directories are applied last**, reverse-sorted by path, because a
+///    directory carries its own mode. Created inline in archive order, a
+///    `0o555` member exists before its contents are written and the next file
+///    inside it fails with EACCES -- first-run setup dies with no fallback.
+///    Upstream calls this out as tar-rs#242.
+/// 2. **`destination` is canonicalized up front**, which on Windows supplies
+///    the `\\?\` prefix so member paths over 260 characters still extract.
+///
+/// Traversal protection needs nothing here: `unpack_in` rejects `ParentDir`
+/// components, strips `RootDir`/`Prefix`, and canonicalizes against `dst` on
+/// every entry, so zip-slip, absolute members and symlink escapes stay blocked.
 fn unpack_without_apple_double<R: Read>(
     mut archive: Archive<R>,
     destination: &Path,
 ) -> Result<(), String> {
+    let destination = destination
+        .canonicalize()
+        .unwrap_or_else(|_| destination.to_path_buf());
+
     let entries = archive
         .entries()
         .map_err(|e| format!("failed to read runtime pack: {e}"))?;
+    let mut directories = Vec::new();
     for entry in entries {
         let mut entry = entry.map_err(|e| format!("failed to read runtime pack: {e}"))?;
         let path = entry
@@ -3203,8 +3294,20 @@ fn unpack_without_apple_double<R: Read>(
         if is_apple_double(&path) {
             continue;
         }
+        // Directories hold no data, so deferring them reads nothing back off a
+        // streaming archive -- only their metadata is applied later.
+        if entry.header().entry_type() == EntryType::Directory {
+            directories.push(entry);
+            continue;
+        }
         entry
-            .unpack_in(destination)
+            .unpack_in(&destination)
+            .map_err(|e| format!("failed to extract runtime pack: {e}"))?;
+    }
+
+    directories.sort_by(|a, b| b.path_bytes().cmp(&a.path_bytes()));
+    for mut dir in directories {
+        dir.unpack_in(&destination)
             .map_err(|e| format!("failed to extract runtime pack: {e}"))?;
     }
     Ok(())
@@ -3729,6 +3832,11 @@ fn download_linux_ffmpeg(data_dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("failed to create {}: {e}", downloads.display()))?;
     let archive = downloads.join("ffmpeg-linux.tar.xz");
     download_file(&url, &archive, Duration::from_secs(30 * 60), "FFmpeg")?;
+    // Only the pinned artifact is trusted. An override points somewhere we
+    // cannot have a hash for, so it is the caller's business to vouch for it.
+    if env_path_override("STEMDECK_FFMPEG_URL").is_none() {
+        verify_pinned_sha256(&archive, Some(DEFAULT_LINUX_FFMPEG_SHA256), "FFmpeg")?;
+    }
 
     // Extract with the system tar (xz support is standard on desktop Linux). The
     // static build unpacks to a single ffmpeg-<ver>-amd64-static/ directory.
@@ -4325,34 +4433,65 @@ fn update_setup_config<const N: usize>(
 /// Polls an already-spawned child until it exits or the timeout elapses.
 /// Mirrors command_output_with_timeout but accepts a pre-spawned Child so the
 /// caller can record the PID before waiting (e.g. to kill on window close).
+/// Wait for `child`, draining its pipes while it runs.
+///
+/// The draining is the point. Reading only after `try_wait()` reports an exit
+/// deadlocks any child that outruns the OS pipe buffer: it blocks in `write()`
+/// with nobody reading, so it never exits, so `try_wait()` never reports an
+/// exit, and the whole thing ends at the timeout instead. `warmup_models`
+/// pipes both streams and its model downloads emit tqdm progress to stderr in
+/// proportion to how long they take -- so the failure lands on slow
+/// connections, the users warmup exists to help (#516).
+///
+/// Each stream gets its own thread because both must drain concurrently;
+/// draining one and then the other reintroduces the deadlock on whichever is
+/// second.
 fn child_output_with_timeout(
     mut child: Child,
     timeout: Duration,
     label: &str,
 ) -> Result<Output, String> {
+    let stdout_reader = child.stdout.take().map(|mut pipe| {
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    });
+    let stderr_reader = child.stderr.take().map(|mut pipe| {
+        thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    });
+
+    let collect = |reader: Option<thread::JoinHandle<Vec<u8>>>| {
+        reader.and_then(|h| h.join().ok()).unwrap_or_default()
+    };
+
     let deadline = Instant::now() + timeout;
     loop {
         if let Some(status) = child
             .try_wait()
             .map_err(|e| format!("failed to wait for {label}: {e}"))?
         {
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let _ = pipe.read_to_end(&mut stdout);
-            }
-            let mut stderr = Vec::new();
-            if let Some(mut pipe) = child.stderr.take() {
-                let _ = pipe.read_to_end(&mut stderr);
-            }
+            // The child is gone, so both pipes are at EOF and these joins
+            // return promptly.
             return Ok(Output {
                 status,
-                stdout,
-                stderr,
+                stdout: collect(stdout_reader),
+                stderr: collect(stderr_reader),
             });
         }
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
+            // Joined rather than detached: killing the child closes its ends,
+            // so the readers finish, and dropping the handles without joining
+            // would leak two threads per timeout.
+            let _ = collect(stdout_reader);
+            let _ = collect(stderr_reader);
             return Err(format!(
                 "{label} timed out after {} seconds",
                 timeout.as_secs()
@@ -4367,44 +4506,12 @@ fn command_output_with_timeout(
     timeout: Duration,
     label: &str,
 ) -> Result<Output, String> {
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|e| format!("failed to start {label}: {e}"))?;
-    let deadline = Instant::now() + timeout;
-
-    loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| format!("failed to wait for {label}: {e}"))?
-        {
-            let mut stdout = Vec::new();
-            if let Some(mut pipe) = child.stdout.take() {
-                let _ = pipe.read_to_end(&mut stdout);
-            }
-
-            let mut stderr = Vec::new();
-            if let Some(mut pipe) = child.stderr.take() {
-                let _ = pipe.read_to_end(&mut stderr);
-            }
-
-            return Ok(Output {
-                status,
-                stdout,
-                stderr,
-            });
-        }
-
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!(
-                "{label} timed out after {} seconds",
-                timeout.as_secs()
-            ));
-        }
-
-        thread::sleep(Duration::from_millis(100));
-    }
+    // Same pipe-draining requirement as child_output_with_timeout; sharing it
+    // keeps the two from drifting apart again (#516).
+    child_output_with_timeout(child, timeout, label)
 }
 
 #[cfg(windows)]
@@ -4474,6 +4581,131 @@ mod tests {
         assert!(
             !unpacked.join("._seaborn-v0_8-bright.mplstyle").exists(),
             "AppleDouble sidecar must not be written to disk"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extract_tar_archive_survives_a_read_only_directory_member() {
+        // tar::Archive::unpack applies directory entries last, reverse-sorted,
+        // so a directory's own mode cannot stop its children being written
+        // (tar-rs#242). The first version of unpack_without_apple_double
+        // created them inline in archive order, which turns a 0o555 member into
+        // a hard extraction failure and a dead first-run setup (#508).
+        use std::os::unix::fs::PermissionsExt;
+
+        let archive_dir = make_tmp();
+        let archive = archive_dir.path().join("runtime.tar.zst");
+        let encoder = zstd::Encoder::new(fs::File::create(&archive).unwrap(), 0).unwrap();
+        let mut builder = tar::Builder::new(encoder);
+
+        // Directory first, file second -- the order that broke.
+        let mut dir_header = tar::Header::new_gnu();
+        dir_header.set_entry_type(tar::EntryType::Directory);
+        dir_header.set_mode(0o555);
+        dir_header.set_size(0);
+        builder
+            .append_data(&mut dir_header, "runtime/locked/", std::io::empty())
+            .unwrap();
+
+        let body = b"axes.grid: True";
+        let mut file_header = tar::Header::new_gnu();
+        file_header.set_entry_type(tar::EntryType::Regular);
+        file_header.set_mode(0o644);
+        file_header.set_size(body.len() as u64);
+        builder
+            .append_data(&mut file_header, "runtime/locked/style.mplstyle", &body[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let destination = make_tmp();
+        super::extract_tar_archive(&archive, destination.path()).unwrap();
+
+        let written = destination.path().join("runtime/locked/style.mplstyle");
+        assert!(
+            written.is_file(),
+            "a file inside a read-only directory member must still extract"
+        );
+        let mode = fs::metadata(destination.path().join("runtime/locked"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o555, "the directory keeps its archived mode");
+
+        // Leave it writable so TempDir cleanup can remove it.
+        fs::set_permissions(
+            destination.path().join("runtime/locked"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn only_our_own_release_assets_are_downloadable_as_updates() {
+        // download_app_update takes its URL from the WebView and checks it
+        // against a SHA-256 from the same caller, so the checksum proves the
+        // bytes arrived intact, not that they came from us. apply_app_update
+        // then extracts the result over StemDeck's own executable (#510).
+        for ok in [
+            "https://github.com/stemdeckapp/stemdeck/releases/download/v0.16.1/x.zip",
+            "https://objects.githubusercontent.com/github-production-release-asset/1/2",
+        ] {
+            assert!(super::validate_release_url(ok).is_ok(), "should allow {ok}");
+        }
+
+        for bad in [
+            "https://evil.example/x.zip",
+            // Lookalikes: the check must be on the host, not a substring of it.
+            "https://github.com.evil.example/x.zip",
+            "https://notgithub.com/x.zip",
+            // Plain http would let a LAN attacker swap the bytes in flight,
+            // which matters because the page itself is served over http.
+            "http://github.com/stemdeckapp/stemdeck/releases/download/v1/x.zip",
+            "file:///etc/passwd",
+            "not a url",
+        ] {
+            assert!(
+                super::validate_release_url(bad).is_err(),
+                "should reject {bad}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_chatty_child_is_drained_rather_than_deadlocked() {
+        // Reading the pipes only after try_wait() reports an exit deadlocks any
+        // child that outruns the OS pipe buffer (64 KiB on Linux, smaller on
+        // macOS): it blocks in write() with nobody reading, so it never exits.
+        // warmup_models pipes both streams and its downloads emit tqdm progress
+        // to stderr in proportion to how long they take, so the old code failed
+        // for users on slow connections after burning the full 30-minute
+        // timeout (#516).
+        //
+        // 512 KiB on each stream is comfortably past any pipe buffer. A short
+        // timeout keeps the failure mode obvious: without concurrent draining
+        // this returns Err(timed out) instead of the output.
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("yes stdoutstdoutstdout | head -c 524288; yes errerrerr | head -c 524288 >&2")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let output =
+            super::command_output_with_timeout(command, Duration::from_secs(20), "chatty child")
+                .expect("a child that fills its pipes must still be collected");
+
+        assert!(output.status.success());
+        assert_eq!(
+            output.stdout.len(),
+            524_288,
+            "stdout must be drained in full"
+        );
+        assert_eq!(
+            output.stderr.len(),
+            524_288,
+            "stderr must be drained in full"
         );
     }
 
@@ -5339,13 +5571,33 @@ b6052160df96b31c9b1e33854a4dcda3d4b57641b880270f31736fb9f445d384  ffmpeg-n7.1-la
         // A fixed port is also the honest shape of the thing under test:
         // reserve_port is given a configured port (8000 by default), never one
         // the OS just handed out.
-        let wanted = (21_000..21_200)
-            .find(|port| std::net::TcpListener::bind(("0.0.0.0", *port)).is_ok())
-            .expect("no free port in 21000..21200 to test with");
+        //
+        // The probe binds through claim_port, not std::net::TcpListener, so
+        // that "free" means the same thing to the probe and to the code being
+        // probed. TcpListener sets SO_REUSEADDR on Unix and claim_port
+        // deliberately does not, so a port sitting in TIME_WAIT accepts one and
+        // refuses the other. That is what failed on the shared macOS runner:
+        // the probe picked 21000, claim_port could not take it, and the
+        // fallback handed back the ephemeral 53969.
+        //
+        // Even with matching options the probe has to let go before
+        // reserve_port can claim it, and cargo runs this binary's tests in
+        // parallel, so the window is narrowed rather than closed. Walking the
+        // range absorbs a lost race. A reserve_port that genuinely ignored a
+        // free port would have to lose all two hundred.
+        let mut attempts = 0_u32;
+        let granted = (21_000..21_200).find_map(|wanted| {
+            drop(super::claim_port("0.0.0.0", wanted).ok()?);
+            attempts += 1;
+            let (got, guard) = super::reserve_port("0.0.0.0", wanted).ok()?;
+            (got == wanted).then_some(guard)
+        });
 
-        let (got, _guard) = super::reserve_port("0.0.0.0", wanted).unwrap();
-
-        assert_eq!(got, wanted);
+        assert!(attempts > 0, "no free port in 21000..21200 to test with");
+        assert!(
+            granted.is_some(),
+            "reserve_port fell back on all {attempts} ports it had just been shown were free"
+        );
     }
 
     #[test]
