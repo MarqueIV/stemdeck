@@ -5571,13 +5571,33 @@ b6052160df96b31c9b1e33854a4dcda3d4b57641b880270f31736fb9f445d384  ffmpeg-n7.1-la
         // A fixed port is also the honest shape of the thing under test:
         // reserve_port is given a configured port (8000 by default), never one
         // the OS just handed out.
-        let wanted = (21_000..21_200)
-            .find(|port| std::net::TcpListener::bind(("0.0.0.0", *port)).is_ok())
-            .expect("no free port in 21000..21200 to test with");
+        //
+        // The probe binds through claim_port, not std::net::TcpListener, so
+        // that "free" means the same thing to the probe and to the code being
+        // probed. TcpListener sets SO_REUSEADDR on Unix and claim_port
+        // deliberately does not, so a port sitting in TIME_WAIT accepts one and
+        // refuses the other. That is what failed on the shared macOS runner:
+        // the probe picked 21000, claim_port could not take it, and the
+        // fallback handed back the ephemeral 53969.
+        //
+        // Even with matching options the probe has to let go before
+        // reserve_port can claim it, and cargo runs this binary's tests in
+        // parallel, so the window is narrowed rather than closed. Walking the
+        // range absorbs a lost race. A reserve_port that genuinely ignored a
+        // free port would have to lose all two hundred.
+        let mut attempts = 0_u32;
+        let granted = (21_000..21_200).find_map(|wanted| {
+            drop(super::claim_port("0.0.0.0", wanted).ok()?);
+            attempts += 1;
+            let (got, guard) = super::reserve_port("0.0.0.0", wanted).ok()?;
+            (got == wanted).then_some(guard)
+        });
 
-        let (got, _guard) = super::reserve_port("0.0.0.0", wanted).unwrap();
-
-        assert_eq!(got, wanted);
+        assert!(attempts > 0, "no free port in 21000..21200 to test with");
+        assert!(
+            granted.is_some(),
+            "reserve_port fell back on all {attempts} ports it had just been shown were free"
+        );
     }
 
     #[test]
