@@ -3406,16 +3406,29 @@ input, textarea { font-family: inherit; }
 
 /* Supporters ("We Recommend" dialog): category sections, each a small uppercase
    accent label with a rule, over a responsive grid of partner cards. */
-/* Wider than the stock about-card so 3 cards per row still breathe. */
-.friends-card { width: min(420px, calc(100vw - 32px)); }
+/* Wide enough for two columns of three cards. The single column it replaced
+   was 420px and always scrolled: five sections stacked is taller than any
+   normal window, so half the people on the list were never seen. */
+.friends-card { width: min(780px, calc(100vw - 32px)); }
 .friends-card .lib-friends-grid { width: 100%; margin-top: 4px; }
 .lib-friends-grid {
-  /* Five sections is taller than the viewport on a short window, so the list
-     scrolls inside the card rather than pushing it off-screen. */
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 0 18px;
+  align-items: start;
   text-align: left;
   padding: 2px 2px 0 0;
-  max-height: min(58vh, 520px);
+  /* Kept as a floor, not as the normal case: a very short window still has to
+     reach the bottom of the list somehow. */
+  max-height: min(74vh, 660px);
   overflow-y: auto;
+}
+.lib-friends-col { min-width: 0; }
+.lib-friends-split { align-self: stretch; background: var(--border); }
+/* One column again once two would squeeze the cards below three per row. */
+@media (max-width: 860px) {
+  .lib-friends-grid { grid-template-columns: 1fr; }
+  .lib-friends-split { display: none; }
 }
 .lib-friends-cat {
   display: flex;
@@ -3429,7 +3442,7 @@ input, textarea { font-family: inherit; }
   text-transform: uppercase;
   color: var(--accent);
 }
-.lib-friends-cat:first-child { margin-top: 2px; }
+.lib-friends-col > .lib-friends-cat:first-child { margin-top: 2px; }
 /* Thin rule filling the width left over by the label. */
 .lib-friends-cat::after {
   content: "";

@@ -2800,17 +2800,29 @@ function wireSupportersDialog() {
 
   if (grid && grid.dataset.ready !== "1") {
     grid.dataset.ready = "1";
-    for (const group of FRIEND_GROUPS) {
+    // Two columns with a rule between them, rather than one long list. Five
+    // sections stacked was taller than the dialog on any normal window, so the
+    // whole thing scrolled and half the people on it were never seen. Split at
+    // three, which is where the two sides come out closest in height.
+    const columns = [document.createElement("div"), document.createElement("div")];
+    const split = document.createElement("div");
+    split.className = "lib-friends-split";
+    split.setAttribute("aria-hidden", "true");
+    for (const col of columns) col.className = "lib-friends-col";
+    grid.append(columns[0], split, columns[1]);
+
+    FRIEND_GROUPS.forEach((group, i) => {
+      const col = columns[i < 3 ? 0 : 1];
       const label = document.createElement("h3");
       label.className = "lib-friends-cat";
       label.setAttribute("data-i18n", group.labelKey);
       label.textContent = i18nT(group.labelKey);
-      grid.appendChild(label);
+      col.appendChild(label);
       const row = document.createElement("div");
       row.className = "lib-friends-row";
       for (const f of group.members) row.appendChild(friendCard(f));
-      grid.appendChild(row);
-    }
+      col.appendChild(row);
+    });
   }
 
   const open = () => dialog.classList.remove("hidden");
