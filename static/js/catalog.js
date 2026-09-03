@@ -59,6 +59,27 @@ const FRIEND_GROUPS = [
         roleKey: "friends.role.moreNotesLessTalk",
         url: "https://www.youtube.com/@morenoteslesstalk",
       },
+      {
+        name: "Analog4Lyfe",
+        roleKey: "friends.role.analog4lyfe",
+        url: "https://www.instagram.com/analog4lyfe",
+        logo: "/img/friends/analog4lyfe.jpg",
+        avatar: true,
+      },
+      {
+        name: "Dead röses",
+        roleKey: "friends.role.deadRoses",
+        url: "https://www.instagram.com/dead_rosesband",
+        logo: "/img/friends/dead-roses.jpg",
+        avatar: true,
+      },
+      {
+        name: "Killah Trakz",
+        roleKey: "friends.role.killahTrakz",
+        url: "https://www.instagram.com/killahtrakz/",
+        logo: "/img/friends/killah-trakz.jpg",
+        avatar: true,
+      },
     ],
   },
   {
@@ -89,13 +110,6 @@ const FRIEND_GROUPS = [
   {
     labelKey: "friends.cat.gear",
     members: [
-      {
-        name: "Analog4Lyfe",
-        roleKey: "friends.role.analog4lyfe",
-        url: "https://www.instagram.com/analog4lyfe",
-        logo: "/img/friends/analog4lyfe.jpg",
-        avatar: true,
-      },
       {
         name: "Empress Effects",
         roleKey: "friends.role.empressEffects",
@@ -143,6 +157,18 @@ const FRIEND_GROUPS = [
         name: "r/bass",
         roleKey: "friends.role.rbass",
         url: "https://www.reddit.com/r/Bass/",
+      },
+    ],
+  },
+  {
+    labelKey: "friends.cat.writers",
+    members: [
+      {
+        name: "Alexandre Borges",
+        roleKey: "friends.role.alexandreBorges",
+        url: "https://www.instagram.com/alexgram_b/",
+        logo: "/img/friends/alexandre-borges.jpg",
+        avatar: true,
       },
     ],
   },
@@ -607,6 +633,25 @@ function applyTrackInfoToPanel(track) {
   }
 }
 
+/**
+ * Tell the server a track was binned or brought back.
+ *
+ * The Trash used to be purely local, which meant it was per-device: a track
+ * deleted here stayed in GET /api/jobs, and the phone UI builds its whole
+ * library from that endpoint, so it listed everything the user thought they
+ * had thrown away. The local folders are still the desktop's own view; this is
+ * what makes the server agree with it.
+ *
+ * Deliberately not awaited by the callers. Binning a track must feel instant
+ * and must not fail because the backend blinked; the reconcile on next load
+ * catches anything that did not land.
+ */
+function syncTrashToServer(trackId, trashed) {
+  const action = trashed ? "trash" : "restore";
+  fetch(`/api/jobs/${encodeURIComponent(trackId)}/${action}`, { method: "POST" })
+    .catch((e) => console.warn(`[catalog] could not ${action} ${trackId} on the server`, e));
+}
+
 function moveTrackToTrash(trackId) {
   if (!tracks[trackId]) return;
   removeTrackFromFolders(trackId);
@@ -617,6 +662,7 @@ function moveTrackToTrash(trackId) {
   // purgeTrash() does the same on permanent delete, for a job that errors
   // after being trashed but before it's purged.
   dismissFailuresByJobId(trackId);
+  syncTrashToServer(trackId, true);
   saveState();
   render();
 }
@@ -1072,6 +1118,7 @@ function restoreTrackFromTrash(trackId) {
     folders.unshift(target);
   }
   if (!target.items.includes(trackId)) target.items.push(trackId);
+  syncTrashToServer(trackId, false);
   saveState();
   render();
 }
@@ -2800,10 +2847,9 @@ function wireSupportersDialog() {
 
   if (grid && grid.dataset.ready !== "1") {
     grid.dataset.ready = "1";
-    // Two columns with a rule between them, rather than one long list. Five
-    // sections stacked was taller than the dialog on any normal window, so the
-    // whole thing scrolled and half the people on it were never seen. Split at
-    // three, which is where the two sides come out closest in height.
+    // Two columns with a rule between them, rather than one long list. Six
+    // sections stacked is taller than the dialog on any normal window, so the
+    // whole thing scrolled and half the people on it were never seen.
     const columns = [document.createElement("div"), document.createElement("div")];
     const split = document.createElement("div");
     split.className = "lib-friends-split";
@@ -2811,12 +2857,47 @@ function wireSupportersDialog() {
     for (const col of columns) col.className = "lib-friends-col";
     grid.append(columns[0], split, columns[1]);
 
-    FRIEND_GROUPS.forEach((group, i) => {
-      const col = columns[i < 3 ? 0 : 1];
+    // Alphabetical, and sorted here rather than in FRIEND_GROUPS so that
+    // adding someone never means finding the right line to put them on.
+    //
+    // Categories sort on the *translated* label, which is the only order that
+    // reads as alphabetical to the person looking at it -- a fixed order taken
+    // from the English names is arbitrary in the other ten languages. Members
+    // sort on `name`, which is a proper noun and identical everywhere.
+    // localeCompare so accents and case land where a reader expects them
+    // (Dead roses next to Dlima, not after Z).
+    const collator = new Intl.Collator(getLanguage(), { sensitivity: "base", numeric: true });
+    const groups = FRIEND_GROUPS.map((group) => ({
+      ...group,
+      label: i18nT(group.labelKey),
+      members: [...group.members].sort((a, b) => collator.compare(a.name, b.name)),
+    })).sort((a, b) => collator.compare(a.label, b.label));
+
+    // Where to break between the two columns. Counting sections was a fixed
+    // split at three, which only balanced while every category had the same
+    // number of people in it; the moment one grew to two rows of cards, one
+    // side ran past the bottom of the dialog and the other stopped halfway.
+    //
+    // So measure in rows instead: a heading plus however many rows of cards
+    // the category needs, and break wherever the two sides come out closest.
+    const PER_ROW = 4;
+    const HEADING = 0.35; // a heading is roughly a third of a card row
+    const weights = groups.map((g) => HEADING + Math.ceil(g.members.length / PER_ROW));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let best = { at: 1, gap: Infinity };
+    let run = 0;
+    for (let k = 1; k < groups.length; k++) {
+      run += weights[k - 1];
+      const gap = Math.abs(run - (total - run));
+      if (gap < best.gap) best = { at: k, gap };
+    }
+
+    groups.forEach((group, i) => {
+      const col = columns[i < best.at ? 0 : 1];
       const label = document.createElement("h3");
       label.className = "lib-friends-cat";
       label.setAttribute("data-i18n", group.labelKey);
-      label.textContent = i18nT(group.labelKey);
+      label.textContent = group.label;
       col.appendChild(label);
       const row = document.createElement("div");
       row.className = "lib-friends-row";
@@ -2852,13 +2933,39 @@ function reconcileAvailability(jobs) {
   render();
 }
 
+/**
+ * Push this device's Trash up to the server.
+ *
+ * Every install that predates server-side Trash has a local bin the backend
+ * knows nothing about, and those tracks are exactly the ones showing up on the
+ * user's phone. One pass on load fixes them, and it doubles as the retry for
+ * any syncTrashToServer call that failed while offline.
+ *
+ * One-way on purpose. Letting the server's answer win here would mean a failed
+ * restore silently re-binning the track on the next load, and the desktop is
+ * the only client with a Trash to be authoritative about.
+ */
+function reconcileTrashWithServer(jobs, trashIds) {
+  for (const state of jobs) {
+    const shouldBeTrashed = trashIds.has(state.job_id);
+    if (shouldBeTrashed === (state.trashed_at != null)) continue;
+    syncTrashToServer(state.job_id, shouldBeTrashed);
+  }
+}
+
 async function syncWithServer() {
   try {
-    const res = await fetch("/api/jobs", { cache: "no-store" });
+    // trashed=include, because this side keeps its own view of the library and
+    // needs the whole registry to reconcile against. The default list leaves
+    // trashed jobs out -- right for the phone, which has no Trash of its own,
+    // and wrong here: reconcileAvailability would read every one of them as
+    // "gone from the registry" and mark the user's binned tracks unavailable.
+    const res = await fetch("/api/jobs?trashed=include", { cache: "no-store" });
     if (!res.ok) return;
     const jobs = await res.json();
     const trashIds = new Set(getTrashFolder()?.items || []);
     const deletedIds = getDeletedJobIds();
+    reconcileTrashWithServer(jobs, trashIds);
     for (const state of jobs) {
       if (tracks[state.job_id]) continue;
       if (trashIds.has(state.job_id)) continue;   // soft-deleted, skip
@@ -3004,6 +3111,7 @@ function networkSettingsHtml() {
         </label>
       </div>
       <div class="settings-net hidden">
+        <div class="settings-net-warn hidden"></div>
         <div class="settings-net-qr"></div>
       </div>
     </div>
@@ -3410,6 +3518,21 @@ async function wireNetworkSetting(overlay) {
   // QR codes: one per LAN address, each encodes the /mobile/ URL so the
   // phone camera opens StemDeck directly. Cards start blurred so an open
   // camera app on a nearby device doesn't scan them before you're ready.
+  // Transpose is an AudioWorklet, which browsers hand out only on a secure
+  // origin, so what this warning has to say depends on whether the addresses
+  // below are https. Getting it wrong in either direction is worse than saying
+  // nothing: over http the key control is simply dead with no reason given,
+  // and over https the phone throws a "not private" page that looks like the
+  // app is broken or unsafe when it is neither.
+  const warnEl = overlay.querySelector(".settings-net-warn");
+  if (warnEl) {
+    const secure = addresses.length > 0 && addresses.every((a) => a.startsWith("https://"));
+    warnEl.textContent = i18nT(
+      secure ? "settings.network.transposeCertPrompt" : "settings.network.transposeNeedsHttps",
+    );
+    warnEl.classList.toggle("hidden", addresses.length === 0);
+  }
+
   if (qrWrap) {
     qrWrap.textContent = "";
     if (addresses.length) {

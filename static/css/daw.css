@@ -979,11 +979,16 @@ input, textarea { font-family: inherit; }
 .settings-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 5px 12px 9px; cursor: pointer; margin-bottom: -1px; }
 .settings-tab:hover { color: var(--fg-2); }
 .settings-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
-/* Every pane fills the fixed dialog body so all tabs are the same size; the
-   General pane (the tall one, with the tracks table) scrolls within it. */
-.settings-pane { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.settings-pane[data-pane="general"] {
-  flex: 1; overflow-y: auto;
+/* Every pane fills the fixed dialog body so all tabs are the same size, and
+   every pane scrolls inside it.
+   Only General used to scroll, which was a bet that no other tab would ever
+   grow past the dialog's 540px. Network did, once it gained the secure-origin
+   warning and one QR card per network interface: the content simply ran on
+   underneath the footer, with the Done button sitting on top of the Port
+   setting. A pane that cannot scroll does not clip, it overlaps. */
+.settings-pane {
+  display: flex; flex-direction: column; min-height: 0; flex: 1;
+  overflow-y: auto;
   /* Reserve a gutter for the scrollbar so it never overlaps the right-aligned
      controls (Compute device, Out of sync tracks). padding-right insets the
      content; the equal negative margin lets that gutter sit in the card's own
@@ -997,7 +1002,11 @@ input, textarea { font-family: inherit; }
 .settings-pane.hidden { display: none; }
 .settings-pane[data-pane="general"] .library-editor-table-wrap { flex: none; max-height: 240px; margin-bottom: 2px; }
 .settings-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 28px 10px; }
-.settings-foot { display: flex; justify-content: flex-end; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--border); }
+/* flex-shrink: 0 so a tall pane squeezes itself, never the footer. */
+.settings-foot {
+  display: flex; justify-content: flex-end; flex-shrink: 0;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--border);
+}
 .settings-done { min-height: 32px; border-radius: 7px; border: 1px solid rgba(244,183,64,0.35); background: rgba(244,183,64,0.16); color: var(--accent); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 0 22px; cursor: pointer; }
 .settings-done:hover { background: rgba(244,183,64,0.24); }
 /* Right-aligned form controls share a fixed width so they line up down the column. */
@@ -1036,6 +1045,21 @@ input, textarea { font-family: inherit; }
 .settings-net { margin-top: 10px; font-size: 11px; color: var(--muted); }
 .settings-net.hidden { display: none; }
 .settings-net-empty { color: var(--muted); }
+/* Transpose-over-the-network warning. Red because the consequence is a control
+   that does nothing, or a browser page that says the connection is not
+   private: both look like the app is broken, and both are worth reading before
+   the user hands the address to their phone. */
+.settings-net-warn {
+  margin: 8px 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.settings-net-warn.hidden { display: none; }
 .settings-net-qr { display: flex; flex-direction: column; gap: 14px; margin-top: 6px; }
 .qr-hint { font-size: 10px; color: var(--muted); margin: 0; line-height: 1.4; }
 .qr-cards-row { display: flex; flex-wrap: wrap; gap: 28px; }
@@ -3409,7 +3433,9 @@ input, textarea { font-family: inherit; }
 /* Wide enough for two columns of three cards. The single column it replaced
    was 420px and always scrolled: five sections stacked is taller than any
    normal window, so half the people on the list were never seen. */
-.friends-card { width: min(780px, calc(100vw - 32px)); }
+/* Wide enough that a four-person category is one row rather than two, which is
+   what was pushing the list past the dialog and putting a scrollbar on it. */
+.friends-card { width: min(1020px, calc(100vw - 32px)); }
 .friends-card .lib-friends-grid { width: 100%; margin-top: 4px; }
 .lib-friends-grid {
   display: grid;
@@ -3418,10 +3444,20 @@ input, textarea { font-family: inherit; }
   align-items: start;
   text-align: left;
   padding: 2px 2px 0 0;
-  /* Kept as a floor, not as the normal case: a very short window still has to
-     reach the bottom of the list somehow. */
-  max-height: min(74vh, 660px);
+  /* Nothing here is meant to be selected or dragged: these are link tiles, and
+     a stray drag across two of them selects half the dialog and leaves it
+     highlighted. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Kept as a floor, not as the normal case: the list is meant to fit, but a
+     very short window still has to reach the bottom of it somehow. */
+  max-height: min(88vh, 900px);
   overflow-y: auto;
+}
+.lib-friends-grid img {
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
 }
 .lib-friends-col { min-width: 0; }
 .lib-friends-split { align-self: stretch; background: var(--border); }
