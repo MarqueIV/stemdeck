@@ -54,7 +54,7 @@ StemDeck is free and **does not accept any money, sponsorship, or funding**  fro
 | Category | Name | What they do | Link |
 |---|---|---|---|
 | Artists & Creators | Joao Gaspar | Producer, film scorer, touring/session musician | [@jay_glaspar](https://www.instagram.com/jay_glaspar) |
-| Artists & Creators | Killah Trakz | Producer | [@killahtrakz](https://www.instagram.com/killahtrakz/) |
+| Artists & Creators | Killah Trakz | Industry Secret Villain and Media Influencer | [@killahtrakz](https://www.instagram.com/killahtrakz/) |
 | Artists & Creators | More Notes Less Talk | Gear-focused creative project with a raw, tape-recorded identity | [@morenoteslesstalk](https://www.youtube.com/@morenoteslesstalk) |
 | Artists & Creators | Analog4Lyfe | Analog gear specialist | [@analog4lyfe](https://www.instagram.com/analog4lyfe) |
 | Artists & Creators | Dead röses | Cork-based punk rock band | [@dead_rosesband](https://www.instagram.com/dead_rosesband) |
