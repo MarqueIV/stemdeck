@@ -15,18 +15,19 @@ import {
   presenceRulerEl, presencePlayheadEl,
   footerTimeElapsed, footerTimeTotal, footerWaveTicks, npScrubFill, footerWaveDrawFn,
   loopStartInput, loopEndInput,
-  metroBtn, metroPanel, metroVolEl, metroVolLabel, metroBarEl, metroBarCustomEl, metroNoteEl,
+  metroBtn, metroPanel, metroVolEl, metroVolLabel, metroBarEl, metroBarCustomEl, metroGroupEl, metroNoteEl,
   metroHalfBtn, metroOneBtn, metroDoubleBtn, metroCountInEl,
   metronome, metronomeEnabled, metronomeVolume, metronomeBeatsPerBar, metronomeHasBars,
   metronomeCountInBars, setMetronomeCountInBars,
+  metronomeGrouping, setMetronomeGrouping,
   setMetronomeHasBars,
   setMetronomeEnabled, setMetronomeVolume, setMetronomeBeatsPerBar,
   setLoopEnabled, setLoopStart, setLoopEnd, setMasterVolume, setPlaybackSpeed,
   waveZoom, setWaveZoom, overviewRerenderFn,
 } from "./state.js";
 import { applyMix, nudgeAllLanePitches, resetAllLanePitches } from "./mixer.js";
-import { isDownbeatIndex, getBeats as getGridBeats, getBars as getGridBars } from "./beatgrid.js";
-import { computeCountIn } from "./metronome.js";
+import { isDownbeatIndex, barPositionIndex, getBeats as getGridBeats, getBars as getGridBars } from "./beatgrid.js";
+import { computeCountIn, defaultGrouping, normaliseGrouping } from "./metronome.js";
 import { t } from "./i18n.js";
 import { pitchBlockedKey } from "./pitchBus.js";
 
@@ -494,6 +495,7 @@ function _armCountIn(eng, startPos) {
     countBars: metronomeCountInBars,
     multiplier: metronome.getMultiplier?.() ?? 1,
     accentMode: metronomeBeatsPerBar,
+    groups: metronomeGrouping,
     start: startPos,
   });
   if (leadIn <= 0 || !clicks.length) return false;
@@ -1065,6 +1067,7 @@ function _saveMetroPrefs() {
     enabled: metronomeEnabled,
     volume: metronomeVolume,
     beatsPerBar: metronomeBeatsPerBar,
+    grouping: metronomeGrouping,
     countInBars: metronomeCountInBars,
   }).catch((e) => console.warn("[transport] failed to save metronome prefs:", e));
 }
@@ -1079,10 +1082,16 @@ function _saveMetroPrefs() {
  */
 export function applyMetronomeAccent() {
   if (!metronome) return;
+  // Grouping is only applied to an explicit meter; under bar marks each bar is
+  // grouped by its own length instead (#595), which is why the position lookup
+  // goes across whether or not the user has set a grouping.
+  metronome.setGrouping?.(metronomeGrouping);
   if (metronomeBeatsPerBar < 0 && metronomeHasBars) {
     metronome.setDownbeatFn?.(isDownbeatIndex);
+    metronome.setBarPositionFn?.(barPositionIndex);
   } else {
     metronome.setDownbeatFn?.(null);
+    metronome.setBarPositionFn?.(null);
     metronome.setBeatsPerBar?.(Math.max(0, metronomeBeatsPerBar));
   }
 }
@@ -1113,6 +1122,7 @@ function _renderMetroBar() {
       metroBarCustomEl.classList.remove("hidden");
     }
   }
+  _renderMetroGrouping();
 }
 // Clamp a typed meter into the range the backend already validates
 // (beats_per_bar is ge=1, le=32 in app/api/jobs.py) and apply it. Anything
@@ -1124,9 +1134,68 @@ function _applyCustomBeatsPerBar() {
   const n = Number.isFinite(raw) ? Math.max(1, Math.min(32, raw)) : 4;
   metroBarCustomEl.value = String(n);
   setMetronomeBeatsPerBar(n);
+  setMetronomeGrouping(null);
+  _renderMetroGrouping();
   applyMetronomeAccent();
   _renderMetroNote(_lastGrid);
   _saveMetroPrefs();
+}
+
+// The grouping box is only meaningful for an explicit meter that actually has a
+// choice to make: Auto groups each detected bar by its own length, Off has no
+// bars, and 2, 3 and 4 have one sensible reading. Shows the grouping in force,
+// so a user can see that 7 is being played 3+2+2 before deciding to change it.
+function _renderMetroGrouping() {
+  if (!metroGroupEl) return;
+  const n = metronomeBeatsPerBar;
+  const label = document.getElementById("t-metro-group-label");
+  if (!(n >= 5)) {
+    metroGroupEl.classList.add("hidden");
+    label?.classList.add("hidden");
+    return;
+  }
+  metroGroupEl.classList.remove("hidden");
+  label?.classList.remove("hidden");
+  metroGroupEl.value = normaliseGrouping(metronomeGrouping, n).join("+");
+  metroGroupEl.placeholder = defaultGrouping(n).join("+");
+}
+
+// Parse "3+2+2" (or "3 2 2", or "3,2,2") into a grouping for the current meter.
+// A grouping that does not sum to the bar length is rejected rather than
+// repaired -- a half-understood one would accent beats the user never asked
+// for -- and the box snaps back to what is actually being played.
+let _groupWarnTimer = null;
+
+function _applyGrouping() {
+  if (!metroGroupEl) return;
+  const n = metronomeBeatsPerBar;
+  const parts = metroGroupEl.value
+    .split(/[^0-9]+/)
+    .filter(Boolean)
+    .map((x) => parseInt(x, 10));
+  const sum = parts.reduce((a, b) => a + b, 0);
+  const ok = parts.length > 0 && sum === n;
+  setMetronomeGrouping(ok ? parts : null);
+  _renderMetroGrouping();
+  applyMetronomeAccent();
+  _renderMetroNote(_lastGrid);
+  _saveMetroPrefs();
+  // Snapping back to the default without saying why reads as the box being
+  // broken rather than as the input being refused. An empty box is a
+  // deliberate "use the default", so only a non-empty one that does not fit
+  // is worth complaining about.
+  if (!ok && parts.length) {
+    metroGroupEl.classList.add("invalid");
+    if (metroNoteEl) {
+      metroNoteEl.textContent = t("click.groupMustSum", { beats: n });
+      metroNoteEl.className = "metro-note warn";
+    }
+    clearTimeout(_groupWarnTimer);
+    _groupWarnTimer = setTimeout(() => {
+      metroGroupEl.classList.remove("invalid");
+      _renderMetroNote(_lastGrid);
+    }, 2600);
+  }
 }
 
 // Count-in is a length select rather than the press-to-arm toggle it used to
@@ -1196,7 +1265,25 @@ function _renderMetroNote(grid) {
     } else if (metronomeBeatsPerBar < 0 && nBars > 1) {
       text = t("metro.note.detectedMultiBar", { bpm: bpmStr, conf, count: nBars });
     } else if (metronomeBeatsPerBar > 0) {
-      text = t("metro.note.full", { bpm: bpmStr, conf, accent: metronomeBeatsPerBar });
+      // A grouped bar accents more than the 1, so "accenting every N beats"
+      // would describe a click that is not being played (#595). Say the
+      // grouping and name the beats it stresses, which is also the only place
+      // the panel explains what "3+2" in the grouping box means.
+      const g = normaliseGrouping(metronomeGrouping, metronomeBeatsPerBar);
+      if (g.length > 1) {
+        const stressed = [];
+        let at = 1;
+        for (const n of g) { stressed.push(at); at += n; }
+        text = t("metro.note.grouped", {
+          bpm: bpmStr,
+          conf,
+          accent: metronomeBeatsPerBar,
+          groups: g.join("+"),
+          stress: t("metro.note.stress", { beats: stressed.join(", ") }),
+        });
+      } else {
+        text = t("metro.note.full", { bpm: bpmStr, conf, accent: metronomeBeatsPerBar });
+      }
     } else {
       text = t("metro.note.noAccent", { bpm: bpmStr, conf });
     }
@@ -1248,6 +1335,7 @@ function wireMetronomeControl() {
     if (prefs && typeof prefs === "object") {
       if (typeof prefs.volume === "number") setMetronomeVolume(Math.max(0, Math.min(1, prefs.volume)));
       if (typeof prefs.beatsPerBar === "number") setMetronomeBeatsPerBar(prefs.beatsPerBar);
+      if (Array.isArray(prefs.grouping)) setMetronomeGrouping(prefs.grouping);
       if (typeof prefs.enabled === "boolean") setMetronomeEnabled(prefs.enabled);
       // countInBars superseded the countIn boolean (#587). Read the old key
       // when the new one is absent so an upgrade keeps the count-in armed
@@ -1303,10 +1391,15 @@ function wireMetronomeControl() {
     metroBarCustomEl?.classList.add("hidden");
     const raw = parseInt(metroBarEl.value, 10);
     setMetronomeBeatsPerBar(Number.isFinite(raw) ? raw : -1);
+    // The old grouping belonged to the old bar length; keeping it would either
+    // be refused on every beat or, worse, fit the new length by accident.
+    setMetronomeGrouping(null);
+    _renderMetroGrouping();
     applyMetronomeAccent();
     _renderMetroNote(_lastGrid);
     _saveMetroPrefs();
   });
 
   metroBarCustomEl?.addEventListener("change", _applyCustomBeatsPerBar);
+  metroGroupEl?.addEventListener("change", _applyGrouping);
 }
