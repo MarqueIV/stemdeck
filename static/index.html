@@ -753,12 +753,15 @@
                 <span data-i18n="click.on">ON</span>
               </button>
               <div class="footer-metro-panel hidden" id="t-metro-panel" role="group" aria-label="Click track options" data-i18n-aria-label="click.optionsAria">
-                <button class="click-toggle-btn" id="t-metro-countin" type="button" title="Count one bar of click before the song starts when you press play" data-i18n-title="click.countInTitle" aria-pressed="false">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                    <path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/>
-                  </svg>
-                  <span data-i18n="click.countIn">Count-in</span>
-                </button>
+                <span class="metro-select-wrap">
+                  <select id="t-metro-countin" class="metro-select" title="Bars of click before the song starts when you press play" data-i18n-title="click.countInTitle" aria-label="Count-in" data-i18n-aria-label="click.countIn">
+                    <option value="0" selected data-i18n="click.countInOff">Count-in: off</option>
+                    <option value="1" data-i18n="click.countIn1">Count-in: 1 bar</option>
+                    <option value="2" data-i18n="click.countIn2">Count-in: 2 bars</option>
+                    <option value="3" data-i18n="click.countIn3">Count-in: 3 bars</option>
+                    <option value="4" data-i18n="click.countIn4">Count-in: 4 bars</option>
+                  </select>
+                </span>
                 <span class="metro-select-wrap">
                   <select id="t-metro-bar" class="metro-select" aria-label="Accent every N beats" data-i18n-aria-label="click.barAccentAria">
                     <option value="-1" selected data-i18n="click.auto">Auto (detected)</option>
@@ -766,9 +769,15 @@
                     <option value="2">2/4</option>
                     <option value="3">3/4</option>
                     <option value="4">4/4</option>
+                    <option value="5">5/4</option>
                     <option value="6">6/8</option>
+                    <option value="7">7/8</option>
+                    <option value="9">9/8</option>
+                    <option value="12">12/8</option>
+                    <option value="custom" data-i18n="click.barCustom">Custom...</option>
                   </select>
                 </span>
+                <input type="number" id="t-metro-bar-custom" class="metro-custom-beats hidden" min="1" max="32" step="1" value="4" title="Beats per bar" data-i18n-title="click.barCustomTitle" aria-label="Beats per bar" data-i18n-aria-label="click.barCustomTitle">
                 <button class="click-toggle-btn" id="t-metro-edit" type="button" title="Edit the beat grid" data-i18n-title="click.editTitle" aria-pressed="false">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
                     <path d="M4 4v16" stroke-width="2.6"/><path d="M10 6v12"/><path d="M15 6v12"/><path d="M20 6v12"/>

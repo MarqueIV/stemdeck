@@ -52,17 +52,48 @@ test.describe("click track", () => {
     await expect(ui.toggle).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("count-in is a toggle and its choice survives a reload", async ({ page }) => {
+  test("the count-in length is chosen from the select and survives a reload", async ({ page }) => {
     await openStudio(page, { tauri: true });
     await waitForClickTrack(page);
-    await metro(page).countIn.click();
-    await expect(metro(page).countIn).toHaveClass(/active/);
+    // #587 turned the count-in from an on/off button into a length select, so
+    // "armed" is now a non-zero value rather than a pressed state. The tint
+    // moved to the wrapper with it.
+    await metro(page).countIn.selectOption("3");
+    await expect(metro(page).countIn).toHaveValue("3");
+    await expect(page.locator("#t-metro-countin").locator("xpath=..")).toHaveClass(/active/);
 
     await openStudio(page, { tauri: true });
     await waitForClickTrack(page);
     // Restored from the store, not merely left in the DOM.
-    await expect(metro(page).countIn).toHaveClass(/active/);
-    await expect(metro(page).countIn).toHaveAttribute("aria-pressed", "true");
+    await expect(metro(page).countIn).toHaveValue("3");
+
+    await metro(page).countIn.selectOption("0");
+    await expect(page.locator("#t-metro-countin").locator("xpath=..")).not.toHaveClass(/active/);
+  });
+
+  test("a custom meter can be typed and drives the accent note", async ({ page }) => {
+    await openStudio(page, { tauri: true });
+    await waitForClickTrack(page);
+    const ui = metro(page);
+    const custom = page.locator("#t-metro-bar-custom");
+
+    // Presets leave the free-entry box hidden.
+    await ui.accent.selectOption("5");
+    await expect(custom).toBeHidden();
+    await expect(ui.note).toContainText("accenting every 5 beats");
+
+    // "Custom..." reveals it, and a typed value is what actually applies.
+    await ui.accent.selectOption("custom");
+    await expect(custom).toBeVisible();
+    await custom.fill("11");
+    await custom.blur();
+    await expect(ui.note).toContainText("accenting every 11 beats");
+
+    // Out of range is clamped to what the backend accepts, never rejected.
+    await custom.fill("99");
+    await custom.blur();
+    await expect(custom).toHaveValue("32");
+    await expect(ui.note).toContainText("accenting every 32 beats");
   });
 
   test("the rate control reports the tempo it is actually clicking", async ({ page }) => {

@@ -15,10 +15,10 @@ import {
   presenceRulerEl, presencePlayheadEl,
   footerTimeElapsed, footerTimeTotal, footerWaveTicks, npScrubFill, footerWaveDrawFn,
   loopStartInput, loopEndInput,
-  metroBtn, metroPanel, metroVolEl, metroVolLabel, metroBarEl, metroNoteEl,
+  metroBtn, metroPanel, metroVolEl, metroVolLabel, metroBarEl, metroBarCustomEl, metroNoteEl,
   metroHalfBtn, metroOneBtn, metroDoubleBtn, metroCountInEl,
   metronome, metronomeEnabled, metronomeVolume, metronomeBeatsPerBar, metronomeHasBars,
-  metronomeCountIn, setMetronomeCountIn,
+  metronomeCountInBars, setMetronomeCountInBars,
   setMetronomeHasBars,
   setMetronomeEnabled, setMetronomeVolume, setMetronomeBeatsPerBar,
   setLoopEnabled, setLoopStart, setLoopEnd, setMasterVolume, setPlaybackSpeed,
@@ -487,11 +487,11 @@ function _currentGrid() {
 // the gap, whether or not the running click is on. Returns true when it took
 // over starting playback, so the caller does not also start it immediately.
 function _armCountIn(eng, startPos) {
-  if (!metronomeCountIn || !eng?.supportsCountIn || !metronome) return false;
+  if (metronomeCountInBars < 1 || !eng?.supportsCountIn || !metronome) return false;
   const grid = _currentGrid();
   if (!grid) return false;
   const { leadIn, clicks } = computeCountIn(grid.beats, grid.bars, {
-    countBars: 1,
+    countBars: metronomeCountInBars,
     multiplier: metronome.getMultiplier?.() ?? 1,
     accentMode: metronomeBeatsPerBar,
     start: startPos,
@@ -1065,7 +1065,7 @@ function _saveMetroPrefs() {
     enabled: metronomeEnabled,
     volume: metronomeVolume,
     beatsPerBar: metronomeBeatsPerBar,
-    countIn: metronomeCountIn,
+    countInBars: metronomeCountInBars,
   }).catch((e) => console.warn("[transport] failed to save metronome prefs:", e));
 }
 
@@ -1095,13 +1095,51 @@ function _renderMetroVolume() {
   if (metroVolLabel) metroVolLabel.textContent = pct;
 }
 
-// Count-in is a press-to-arm toggle like the click on/off beside it, not a
-// switch: both are "is this on for the next play?", and two different widgets
-// for the same question read as two different kinds of setting.
+// Show the meter in the select when it is one of the presets, otherwise select
+// "Custom..." and reveal the number input holding the actual value. Keeping the
+// two in sync in one place means a value restored from prefs, a preset pick and
+// a typed number all land the same way.
+function _renderMetroBar() {
+  if (!metroBarEl) return;
+  const n = metronomeBeatsPerBar;
+  const preset = [...metroBarEl.options].some((o) => o.value === String(n));
+  if (preset) {
+    metroBarEl.value = String(n);
+    metroBarCustomEl?.classList.add("hidden");
+  } else {
+    metroBarEl.value = "custom";
+    if (metroBarCustomEl) {
+      metroBarCustomEl.value = String(n);
+      metroBarCustomEl.classList.remove("hidden");
+    }
+  }
+}
+// Clamp a typed meter into the range the backend already validates
+// (beats_per_bar is ge=1, le=32 in app/api/jobs.py) and apply it. Anything
+// unparseable falls back to 4 rather than to Auto: the user explicitly asked
+// for a custom meter, so dropping them back to detection would be surprising.
+function _applyCustomBeatsPerBar() {
+  if (!metroBarCustomEl) return;
+  const raw = parseInt(metroBarCustomEl.value, 10);
+  const n = Number.isFinite(raw) ? Math.max(1, Math.min(32, raw)) : 4;
+  metroBarCustomEl.value = String(n);
+  setMetronomeBeatsPerBar(n);
+  applyMetronomeAccent();
+  _renderMetroNote(_lastGrid);
+  _saveMetroPrefs();
+}
+
+// Count-in is a length select rather than the press-to-arm toggle it used to
+// be (#587): once "how many bars" is a question, on/off is just the zero case,
+// and a separate toggle beside a length would be two widgets for one setting.
+// "Armed" therefore reads as a non-zero value, and the tint lives on the
+// wrapper because a styled <select> cannot carry it.
 function _renderCountIn() {
   if (!metroCountInEl) return;
-  metroCountInEl.classList.toggle("active", metronomeCountIn);
-  metroCountInEl.setAttribute("aria-pressed", metronomeCountIn ? "true" : "false");
+  metroCountInEl.value = String(metronomeCountInBars);
+  // The wrap carries the "on" tint the toggle button used to, so the panel
+  // still shows at a glance that a count-in is armed.
+  metroCountInEl.parentElement?.classList.toggle("active", metronomeCountInBars > 0);
 }
 
 export function toggleMetronome(force) {
@@ -1196,7 +1234,7 @@ export function updateMetronomeAvailability(grid, reason = "") {
     autoOpt.disabled = !metronomeHasBars;
     autoOpt.textContent = metronomeHasBars ? t("click.auto") : t("click.autoNone");
   }
-  if (metroBarEl) metroBarEl.value = String(metronomeBeatsPerBar);
+  _renderMetroBar();
   _renderMetroMultiplier();
   _renderMetroNote(grid);
 }
@@ -1211,10 +1249,14 @@ function wireMetronomeControl() {
       if (typeof prefs.volume === "number") setMetronomeVolume(Math.max(0, Math.min(1, prefs.volume)));
       if (typeof prefs.beatsPerBar === "number") setMetronomeBeatsPerBar(prefs.beatsPerBar);
       if (typeof prefs.enabled === "boolean") setMetronomeEnabled(prefs.enabled);
-      if (typeof prefs.countIn === "boolean") setMetronomeCountIn(prefs.countIn);
+      // countInBars superseded the countIn boolean (#587). Read the old key
+      // when the new one is absent so an upgrade keeps the count-in armed
+      // rather than silently turning it off.
+      if (typeof prefs.countInBars === "number") setMetronomeCountInBars(prefs.countInBars);
+      else if (typeof prefs.countIn === "boolean") setMetronomeCountInBars(prefs.countIn ? 1 : 0);
     }
     _renderMetroVolume();
-    if (metroBarEl) metroBarEl.value = String(metronomeBeatsPerBar);
+    _renderMetroBar();
     _renderCountIn();
     if (metronomeEnabled && !metroBtn.disabled) {
       metroBtn.classList.add("active");
@@ -1243,17 +1285,28 @@ function wireMetronomeControl() {
     });
   }
 
-  metroCountInEl?.addEventListener("click", () => {
-    setMetronomeCountIn(!metronomeCountIn);
+  metroCountInEl?.addEventListener("change", () => {
+    setMetronomeCountInBars(parseInt(metroCountInEl.value, 10));
     _renderCountIn();
     _saveMetroPrefs();
   });
 
   metroBarEl?.addEventListener("change", () => {
+    if (metroBarEl.value === "custom") {
+      // Seed from whatever the box already holds so picking "Custom..." does
+      // not silently jump the meter to something the user never chose.
+      metroBarCustomEl?.classList.remove("hidden");
+      _applyCustomBeatsPerBar();
+      metroBarCustomEl?.focus();
+      return;
+    }
+    metroBarCustomEl?.classList.add("hidden");
     const raw = parseInt(metroBarEl.value, 10);
     setMetronomeBeatsPerBar(Number.isFinite(raw) ? raw : -1);
     applyMetronomeAccent();
     _renderMetroNote(_lastGrid);
     _saveMetroPrefs();
   });
+
+  metroBarCustomEl?.addEventListener("change", _applyCustomBeatsPerBar);
 }
