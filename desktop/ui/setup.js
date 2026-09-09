@@ -457,7 +457,32 @@ async function runSetup() {
         // never fails setup over this (warmup_models itself never throws for
         // an individual model failure; this catch is only for the whole
         // subprocess failing to run at all, e.g. a missing Python).
-        await invoke("warmup_models");
+        //
+        // The per-model result was thrown away here, so a user whose beat
+        // model never arrived saw a clean setup and then a permanently worse
+        // beat grid, with nothing anywhere connecting the two (#502). Naming
+        // it at least puts it in the log that gets attached to bug reports.
+        //
+        // Deliberately not setStatus: the next step overwrites the status line
+        // immediately and then navigates away to the backend, so anything
+        // written here is invisible. Telling the user properly belongs in the
+        // main UI, where the affected feature actually lives, and is its own
+        // piece of work.
+        // camelCase, because ModelWarmupStatus is #[serde(rename_all =
+        // "camelCase")]. Reading the Rust field names instead gives four
+        // undefineds, `missing` is empty every time, and this says nothing.
+        const status = await invoke("warmup_models");
+        const missing = [
+          [status?.demucsReady, "stem separation"],
+          [status?.beatThisReady, "beat detection"],
+          [status?.sectionsReady, "song sections"],
+          [status?.vocalSplitReady, "karaoke split"],
+        ]
+          .filter(([ready]) => ready === false)
+          .map(([, label]) => label);
+        if (missing.length) {
+          console.warn("models not downloaded during setup:", missing.join(", "));
+        }
       } catch (err) {
         console.warn("model warmup failed (will download lazily on first use):", err);
       } finally {
