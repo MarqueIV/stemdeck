@@ -10,7 +10,13 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app.core.config import DEMUCS_MODEL, TIMEOUT_FFMPEG
+from app.core.config import (
+    DEMUCS_MODEL,
+    IDENTIFY_GRACE_SEC,
+    LYRICS_IDENTITY_WAIT_SEC,
+    LYRICS_LOOKUP_GRACE_SEC,
+    TIMEOUT_FFMPEG,
+)
 from app.core.models import Job, JobCancelled, _set
 from app.core.redact import redact
 from app.core.registry import is_upload, set_proc
@@ -26,8 +32,12 @@ from app.pipeline.collect import (
 )
 from app.pipeline.download import download
 from app.pipeline.errors import classify_failure
+from app.pipeline.identify import IdentifyLookup, release_source
+from app.pipeline.lyrics_lookup import LyricsLookup
+from app.pipeline.lyrics_retime import retime_after_separation
 from app.pipeline.sections import detect_sections
 from app.pipeline.separate import separate
+from app.pipeline.transcribe import transcribe_lyrics
 
 logger = logging.getLogger("stemdeck.pipeline")
 
@@ -206,6 +216,9 @@ def _run_common(job: Job, source: Path, job_dir: Path) -> None:
     # at all -- and the person who imported it may no longer have the file
     # either. A link costs a re-download; an upload costs the recording.
     if not is_upload(job):
+        # A fingerprint still reading the source would make the delete fail
+        # on Windows. It finished long ago, so this is nearly always a no-op.
+        release_source(job.id)
         cleanup_source(job_dir)
     job.stems = [{"name": name, "url": f"/api/jobs/{job.id}/stems/{name}.wav"} for name in found]
     _check_cancel(job)
@@ -270,12 +283,63 @@ def _run_common(job: Job, source: Path, job_dir: Path) -> None:
     _lap(job, "sections", mark)
 
 
+def _run_with_band_lookup(job: Job, source: Path, job_dir: Path) -> None:
+    """_run_common, with the band the artist tag names looked up beside it (#699).
+
+    Started as soon as the tags are known, which is now for both pipelines:
+    a link's come with its download, an upload's were read when it arrived.
+    The lookup is two small web requests and separation takes minutes, so by
+    the time the job is done the answer has long been waiting, and the wait
+    below is for nothing. When it has not arrived, the job waits at most
+    IDENTIFY_GRACE_SEC and finishes without it; the page then looks for
+    the band itself when the track is opened.
+
+    The band is found through the recording the job is identified as
+    (identify.py: an AcoustID fingerprint of the source, or a MusicBrainz
+    search by the tags), which runs in the same thread first.
+
+    Only a pipeline that got to the end keeps the answer: a cancel or a
+    failure raises out of _run_common, past finish(), and nothing is written.
+    """
+    lookup = IdentifyLookup.start(job, [source])
+    # The lyrics, on the same terms: LRCLIB beside separation, lyrics.json
+    # written only by a pipeline that got to the end. Looked up by the
+    # identity once the identification has it, else by the tags.
+    lyrics = LyricsLookup.start(
+        job,
+        job_dir,
+        identity=(lambda: lookup.wait_identity(LYRICS_IDENTITY_WAIT_SEC)) if lookup else None,
+    )
+    _run_common(job, source, job_dir)
+    if lookup is not None:
+        mark = time.monotonic()
+        lookup.finish(job, IDENTIFY_GRACE_SEC)
+        # What the lookup cost the import, which should be nothing (#293).
+        _lap(job, "identify_wait", mark)
+    if lyrics is not None:
+        mark = time.monotonic()
+        lyrics.finish(job, job_dir, LYRICS_LOOKUP_GRACE_SEC)
+        _lap(job, "lyrics_wait", mark)
+    # Lyrics from the vocals stem, only when the lookup found none: last,
+    # because it needs both the stem and the lookup's answer. Never raises
+    # but for a cancel.
+    mark = time.monotonic()
+    transcribe_lyrics(job, job_dir)
+    _lap(job, "transcribe", mark)
+    # LRCLIB lyrics whose timing nothing confirmed, timed line by line to the
+    # vocals (lyrics_retime.py): after the above, whose transcript it reuses.
+    # Never raises but for a cancel.
+    mark = time.monotonic()
+    retime_after_separation(job, job_dir)
+    _lap(job, "retime", mark)
+
+
 def _run_blocking(job: Job, url: str, job_dir: Path) -> None:
     _check_cancel(job)
     mark = time.monotonic()
     source = download(job, url, job_dir)
     _lap(job, "download", mark)
-    _run_common(job, source, job_dir)
+    _run_with_band_lookup(job, source, job_dir)
 
 
 def _run_local_blocking(job: Job, source_path: Path, job_dir: Path) -> None:
@@ -283,13 +347,17 @@ def _run_local_blocking(job: Job, source_path: Path, job_dir: Path) -> None:
     mark = time.monotonic()
     source = _prepare_local_source(job, source_path, job_dir)
     _lap(job, "prepare", mark)
-    _run_common(job, source, job_dir)
+    _run_with_band_lookup(job, source, job_dir)
 
 
 def _write_metadata(job: Job, job_dir: Path) -> None:
     meta = {
         "title": job.title,
         "thumbnail": job.thumbnail,
+        "audio_tags": job.audio_tags,
+        "identity": job.identity,
+        "artist": job.artist,
+        "work": job.work,
         "duration_sec": job.duration_sec,
         "bpm": job.bpm,
         "key": job.key,
@@ -411,6 +479,8 @@ async def _run_async(
         if not isinstance(e, JobCancelled) and not job.cancel_requested:
             logger.exception("pipeline failed for job %s: %s", job.id, e)
             _set(job, status="error", stage="Error: Processing failed", error=error_msg)
+            # A fingerprint may still have the source open (Windows).
+            release_source(job.id)
             _quarantine_failed_job(job, job_dir, jobs_dir, e)
             persist_registry(jobs_dir)
             return
@@ -421,6 +491,7 @@ async def _run_async(
         )
         _set(job, status="cancelled", stage="Cancelled")
         persist_registry(jobs_dir)
+        release_source(job.id)
         _rmtree(job_dir)
         return
     _set(job, status="done", progress=1.0, stage="Done")

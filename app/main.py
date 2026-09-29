@@ -26,7 +26,9 @@ from app.api.router import router
 from app.core import tls_listener
 from app.core.compression import COMPRESS_LEVEL, MINIMUM_SIZE, TextGZipMiddleware
 from app.core.config import (
+    ACOUSTID_CHECK_KEY,
     DEMUCS_MODEL,
+    DISCOGS_CHECK_TOKEN,
     FFMPEG_BIN,
     HTTPS_PORT,
     JOBS_DIR,
@@ -50,6 +52,10 @@ from app.core.settings import (
     AUTO_DELETE_DAYS_MIN,
     DURATION_MAX_SEC,
     DURATION_MIN_SEC,
+    acoustid_api_key_hint,
+    acoustid_key_format_ok,
+    discogs_token_format_ok,
+    discogs_token_hint,
     get_allow_network,
     get_auto_delete_days,
     get_auto_delete_jobs,
@@ -63,19 +69,23 @@ from app.core.settings import (
     get_playlist_max_items,
     get_port,
     get_separation_quality,
+    get_transcribe_lyrics,
     get_video_max_height,
+    set_acoustid_api_key,
     set_allow_network,
     set_auto_delete_days,
     set_auto_delete_jobs,
     set_auto_sections,
     set_cookies_file,
     set_demucs_device,
+    set_discogs_token,
     set_export_sample_rate,
     set_jobs_dir,
     set_max_duration_sec,
     set_playlist_max_items,
     set_port,
     set_separation_quality,
+    set_transcribe_lyrics,
     set_video_max_height,
 )
 from app.core.stems_location import (
@@ -362,9 +372,20 @@ def _settings_payload() -> dict[str, object]:
         "video_max_height": get_video_max_height(),
         "export_sample_rate": get_export_sample_rate(),
         "separation_quality": get_separation_quality(),
+        # Whisper lyrics for a job no lookup found any for: "auto" (on a GPU
+        # only) | "on" | "off".
+        "transcribe_lyrics": get_transcribe_lyrics(),
         # Absent unless the user set one. Only the path is exposed, never the
         # file's contents -- those are the user's YouTube session.
         "cookies_file": get_cookies_file(),
+        # Never the key itself: whether one is set, and its last four
+        # characters so the field can show which one.
+        "acoustid_api_key_set": acoustid_api_key_hint() is not None,
+        "acoustid_api_key_tail": acoustid_api_key_hint(),
+        # The same for the Discogs token: whether one is set, and its last two
+        # characters, never the token.
+        "discogs_token_set": discogs_token_hint() is not None,
+        "discogs_token_tail": discogs_token_hint(),
         "port": get_port(),
         # The user's choice ("auto" | "cuda" | "mps" | "cpu") drives the UI
         # select; the resolved value shows what jobs will actually run on;
@@ -401,6 +422,13 @@ def get_settings(request: Request) -> dict[str, object]:
     # preference (which only takes effect on the next restart) -- so the field
     # reflects reality. Editing it still saves the preference via POST.
     return {**_settings_payload(), "port": port, "lan_addresses": addresses}
+
+
+# The detail for a key AcoustID refuses, which the Settings field tells apart
+# from a key of the wrong shape to say which key it wants.
+ACOUSTID_KEY_REFUSED = "AcoustID does not accept this key"
+# The same for a Discogs token Discogs answers 401.
+DISCOGS_TOKEN_REFUSED = "Discogs does not accept this token"
 
 
 @app.post("/api/settings", tags=["settings"])
@@ -444,6 +472,41 @@ async def update_settings(request: Request) -> dict[str, object]:
             raise HTTPException(status_code=422, detail=str(e)) from None
         except (TypeError, OSError):
             raise HTTPException(status_code=422, detail="invalid cookies file") from None
+    if "acoustid_api_key" in body:
+        value = body["acoustid_api_key"]
+        if value is not None and not isinstance(value, str):
+            raise HTTPException(status_code=422, detail="invalid AcoustID key") from None
+        key = (value or "").strip()
+        if key and ACOUSTID_CHECK_KEY and acoustid_key_format_ok(key):
+            # Tried once before it is kept: a key AcoustID refuses would
+            # otherwise fail every import without a word.
+            from app.pipeline.identify import acoustid_key_works
+
+            if await asyncio.to_thread(acoustid_key_works, key) is False:
+                raise HTTPException(status_code=422, detail=ACOUSTID_KEY_REFUSED) from None
+        try:
+            set_acoustid_api_key(value)
+        except ValueError:
+            # A fixed message: the rejected value is the user's key, and
+            # nothing here echoes it back or logs it.
+            raise HTTPException(status_code=422, detail="invalid AcoustID key") from None
+    if "discogs_token" in body:
+        value = body["discogs_token"]
+        if value is not None and not isinstance(value, str):
+            raise HTTPException(status_code=422, detail="invalid Discogs token") from None
+        token = (value or "").strip()
+        if token and DISCOGS_CHECK_TOKEN and discogs_token_format_ok(token):
+            # Tried once before it is kept, as the AcoustID key is. Bounded:
+            # the Save button waits on it.
+            from app.pipeline.discogs_auth import discogs_token_works
+
+            if await asyncio.to_thread(discogs_token_works, token) is False:
+                raise HTTPException(status_code=422, detail=DISCOGS_TOKEN_REFUSED) from None
+        try:
+            set_discogs_token(value)
+        except ValueError:
+            # A fixed message: the rejected value is the user's token.
+            raise HTTPException(status_code=422, detail="invalid Discogs token") from None
     if "demucs_device" in body:
         try:
             set_demucs_device(str(body["demucs_device"]))
@@ -454,6 +517,11 @@ async def update_settings(request: Request) -> dict[str, object]:
     if "separation_quality" in body:
         try:
             set_separation_quality(str(body["separation_quality"]))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from None
+    if "transcribe_lyrics" in body:
+        try:
+            set_transcribe_lyrics(str(body["transcribe_lyrics"]))
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from None
     return _settings_payload()
@@ -849,7 +917,11 @@ def download_logs_zip() -> StreamingResponse:
 # script-src has no 'unsafe-inline'/'eval': all JS is same-origin modules and the
 # inline scripts/onclick were moved out. 'unsafe-inline' is allowed for *styles*
 # only (the UI sets many style attributes). Allowances:
-#   connect-src  -> same-origin API/SSE, the GitHub update check, Tauri IPC
+#   connect-src  -> same-origin API/SSE, the GitHub update check, Tauri IPC,
+#                   Wikidata/Wikipedia for the artist box the now-playing card
+#                   opens, and LRCLIB for the Lyrics tab (#699). All four are
+#                   read-only public APIs, asked only about the open track, and
+#                   sent only an artist and a song name.
 #   img-src https: -> remote YouTube/SoundCloud thumbnails
 #   style/font   -> the Google Fonts <link>
 _CSP = (
@@ -863,7 +935,9 @@ _CSP = (
     # track init); without them Multitrack.create throws and no audio loads
     # (#186). They are inline/same-origin schemes, not network endpoints, so
     # they add no exfiltration channel — script-src below stays locked.
-    "connect-src 'self' https://api.github.com ipc: http://ipc.localhost data: blob:; "
+    "connect-src 'self' https://api.github.com ipc: http://ipc.localhost data: blob: "
+    "https://www.wikidata.org https://query.wikidata.org https://*.wikipedia.org "
+    "https://lrclib.net; "
     "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 )
 

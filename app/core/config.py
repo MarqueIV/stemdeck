@@ -189,6 +189,14 @@ FFPROBE_BIN = _env_path(
     "STEMDECK_FFPROBE",
     FFMPEG_DIR / ("ffprobe.exe" if sys.platform.startswith("win") else "ffprobe"),
 )
+# Chromaprint's fpcalc, for fingerprinting when the FFmpeg in use has no
+# chromaprint muxer (app/pipeline/fpcalc.py). The desktop shell downloads it
+# beside FFmpeg on macOS and Linux; elsewhere it is looked for beside the FFmpeg
+# in use, then on PATH.
+FPCALC_BIN = _env_path(
+    "STEMDECK_FPCALC",
+    FFMPEG_DIR / ("fpcalc.exe" if sys.platform.startswith("win") else "fpcalc"),
+)
 # JavaScript runtime for yt-dlp's YouTube challenge solver (#432). Portable
 # builds drop a binary here because nothing is on PATH in a portable install;
 # Docker ships deno on PATH and source checkouts have whatever the developer
@@ -318,6 +326,395 @@ TIMEOUT_VOCAL_SPLIT = _env_int("STEMDECK_TIMEOUT_VOCAL_SPLIT", 1800)
 # Beat-grid stage decodes the whole drums stem (not the 180 s analyze window),
 # so it gets its own, larger budget.
 TIMEOUT_BEATGRID = _env_int("STEMDECK_TIMEOUT_BEATGRID", 300)
+
+# Reading an upload's tags (artist, title, album, lyrics) with ffprobe for the
+# Lyrics tab and the artist box (#699). Tags are a nicety, so a probe that
+# takes longer than this is abandoned and the upload goes ahead without them.
+TIMEOUT_PROBE_TAGS = _env_int("STEMDECK_TIMEOUT_PROBE_TAGS", 15)
+# Looking up a finished link's tags after the fact, for tracks imported before
+# tags were read: one yt-dlp metadata request (two if YouTube's bot check sends
+# it back for cookies), no download. Past this the lookup answers "nothing
+# found" rather than keep the page waiting.
+TIMEOUT_FETCH_TAGS = _env_int("STEMDECK_TIMEOUT_FETCH_TAGS", 45)
+# Caps on what a tag may carry into the job record, which is rewritten whole
+# on every save: a name longer than this is not a name, and a lyrics tag
+# longer than this is not lyrics.
+AUDIO_TAG_MAX_CHARS = 300
+AUDIO_TAG_LYRICS_MAX_CHARS = 20000
+# An upload's tags written in a Windows codepage but read as Latin-1 (an MP3's
+# ID3v1 tag, or an ID3v2 frame marked ISO-8859-1): "zapomnia³em" for
+# "zapomniałem", "Êèíî" for "Кино". The codepages tried when re-reading
+# them, Central European then Cyrillic. See _repair_encoding in
+# app/pipeline/audio_tags.py for when a re-reading is taken.
+AUDIO_TAG_LEGACY_CODEPAGES = ("cp1250", "cp1251")
+# A word of at least this many letters, every one of them accented Latin, is
+# taken as mis-decoded ("Êèíî"). Real names this short made only of accents
+# exist ("ÆØÅ"), so three letters is not evidence on its own.
+AUDIO_TAG_MOJIBAKE_MIN_WORD = 4
+
+# Finding the band a job's artist tag names, on Wikidata, while the job is
+# separated (#699), so the artist box and the Lyrics tab have it the moment the
+# import is done. Two requests, each abandoned after this many seconds. The
+# lookup runs beside separation, which takes far longer, so it costs an import
+# no time unless both requests are slow and the separation was fast.
+TIMEOUT_ARTIST_LOOKUP = _env_int("STEMDECK_TIMEOUT_ARTIST_LOOKUP", 8)
+# How long a finished pipeline waits for a lookup still in flight before it
+# lets the job finish without a band. Kept short: the page finds the band
+# itself when it opens a track that has none, so the wait buys little.
+ARTIST_LOOKUP_GRACE_SEC = _env_int("STEMDECK_ARTIST_LOOKUP_GRACE_SEC", 2)
+# Wikimedia asks every client to name itself and a way to reach its maker.
+ARTIST_LOOKUP_USER_AGENT = (
+    "StemDeck (https://github.com/stemdeckapp/stemdeck; self-hosted stem separation)"
+)
+# A search and one entity fetch for its hits come to well under this; an
+# answer bigger than it is not one worth parsing.
+ARTIST_LOOKUP_MAX_BYTES = 8 * 1024 * 1024
+
+# Which recording a job is, found while it separates (app/pipeline/identify.py).
+#
+# AcoustID: an audio fingerprint of the first FINGERPRINT_LENGTH_SEC seconds
+# (fpcalc's default length), made with ffmpeg's chromaprint muxer (or fpcalc,
+# FPCALC_BIN, where that FFmpeg has none), looked up with the user's own API
+# key. Only runs when the user set one in Settings. TIMEOUT_FINGERPRINT bounds
+# either one.
+ACOUSTID_LOOKUP_URL = "https://api.acoustid.org/v2/lookup"
+# A key is tried once when it is saved (identify.acoustid_key_works), so a key
+# AcoustID refuses is caught in Settings rather than failing every import in
+# silence. 0 turns the check off, for the browser tests, which must never
+# reach AcoustID.
+ACOUSTID_CHECK_KEY = _env_int("STEMDECK_ACOUSTID_CHECK_KEY", 1) != 0
+# Discogs: the user's own personal access token, set in Settings, for band
+# profiles Wikipedia does not cover. A token is tried once when it is saved
+# (discogs_auth.discogs_token_works), as an AcoustID key is, so one Discogs
+# refuses is caught in Settings. 0 turns the check off, for the browser tests,
+# which must never reach Discogs. The check is abandoned after
+# TIMEOUT_DISCOGS_CHECK seconds a read, and twice that in all.
+DISCOGS_IDENTITY_URL = "https://api.discogs.com/oauth/identity"
+DISCOGS_CHECK_TOKEN = _env_int("STEMDECK_DISCOGS_CHECK_TOKEN", 1) != 0
+TIMEOUT_DISCOGS_CHECK = _env_int("STEMDECK_TIMEOUT_DISCOGS_CHECK", 8)
+FINGERPRINT_LENGTH_SEC = 120
+# Decoding two minutes of audio for the fingerprint takes about a second; past
+# this the fingerprint is abandoned and identification goes on without it.
+TIMEOUT_FINGERPRINT = _env_int("STEMDECK_TIMEOUT_FINGERPRINT", 30)
+# AcoustID's score is how closely the fingerprints agree, 0..1. The same
+# recording scores well above 0.9; a different mix or a live cut of the song
+# lands far lower. Kept high because the answer is saved with nobody looking.
+ACOUSTID_MIN_SCORE = 0.8
+# AcoustID allows three requests a second per client.
+ACOUSTID_MIN_INTERVAL_SEC = 0.34
+# MusicBrainz: one request a second per client, and every client names itself
+# with a way to reach its maker, or it is throttled harder.
+MUSICBRAINZ_API = "https://musicbrainz.org/ws/2"
+MUSICBRAINZ_MIN_INTERVAL_SEC = 1.0
+
+
+def _musicbrainz_user_agent() -> str:
+    try:
+        from app._version import version
+
+        release = str(version).split("+", 1)[0] or "dev"
+    except Exception:
+        release = "dev"
+    return f"StemDeck/{release} ( https://github.com/stemdeckapp/stemdeck )"
+
+
+MUSICBRAINZ_USER_AGENT = _musicbrainz_user_agent()
+# MusicBrainz sheds load with 503 (and now and then 429) even to a client
+# keeping to its rate: measured on 2026-09-27, four of 45 benchmark songs lost
+# their identity to a single 503. A refused request is asked again up to this
+# many times, waiting MUSICBRAINZ_RETRY_BACKOFF_SEC, then twice that, and so
+# on, or what Retry-After asks, never more than MUSICBRAINZ_RETRY_MAX_WAIT_SEC.
+MUSICBRAINZ_RETRIES = 3
+MUSICBRAINZ_RETRY_BACKOFF_SEC = 1.0
+MUSICBRAINZ_RETRY_MAX_WAIT_SEC = 8.0
+# The most one request may take, its retries and their waits included: past
+# it, a request still being refused gives up, so a run of busy answers never
+# holds a lookup (and the shared queue behind it) for a minute.
+MUSICBRAINZ_REQUEST_BUDGET_SEC = 20.0
+# A request that would wait longer than this for its turn under the rate
+# limit is not made at all: a queue that long means something else is
+# hammering the service, and identification is best-effort.
+RATE_LIMIT_MAX_WAIT_SEC = 15
+# A search by name is kept only when MusicBrainz scores it at least this
+# (0..100) and its length is within IDENTIFY_DURATION_TOLERANCE_SEC of the
+# track's: a name alone can be anybody's song, the length says which.
+MUSICBRAINZ_SEARCH_MIN_SCORE = 90
+IDENTIFY_DURATION_TOLERANCE_SEC = 4
+# A track its tags do not name (a YouTube upload with no music metadata) is
+# looked for by its title (app/pipeline/title_parse.py): up to this many
+# readings of it on MusicBrainz, then, when none is confident, on LRCLIB.
+TITLE_MUSICBRAINZ_SEARCHES = 3
+TITLE_LRCLIB_SEARCHES = 2
+# A recording found that way is kept only when its credit and release titles
+# (or LRCLIB's artist and album) contain at least this share of the title's
+# words beyond the song's name: the performers, the show.
+TITLE_MIN_COVERAGE = 0.5
+# When no reading's words are found in a credit, the artist a reading names is
+# looked up on MusicBrainz by name and alias, which finds 周杰倫 from "Jay
+# Chou", IU from "아이유" and 鄧麗君 from "邓丽君", and the song is searched for
+# among that artist's recordings: for up to this many readings, two requests
+# each.
+TITLE_ARTIST_SEARCHES = 2
+# A music video runs longer than the recording on the album: an intro, a
+# story, credits. Among the recordings of an artist found by name, one this
+# much shorter than the upload still counts, the nearest length first.
+# Measured on 2026-09-27: IU's "Good Day" video is 124 seconds longer than
+# the single, BTS "Spring Day" 55, Jay Chou's "Sunny Day" 49.
+IDENTIFY_VIDEO_EXTRA_SEC = 150
+# Each AcoustID or MusicBrainz request is abandoned after this many seconds.
+TIMEOUT_IDENTIFY_REQUEST = _env_int("STEMDECK_TIMEOUT_IDENTIFY_REQUEST", 8)
+# How long a finished pipeline waits for identification still in flight, as
+# ARTIST_LOOKUP_GRACE_SEC does for the band. Separation takes minutes, so the
+# answer is nearly always waiting already.
+IDENTIFY_GRACE_SEC = _env_int("STEMDECK_IDENTIFY_GRACE_SEC", 2)
+# POST /api/jobs/{id}/audio-tags identifies an older track before it answers;
+# past this it answers with what it has.
+TIMEOUT_IDENTIFY_BACKFILL = _env_int("STEMDECK_TIMEOUT_IDENTIFY_BACKFILL", 60)
+# A lookup answer bigger than this is not one worth parsing.
+IDENTIFY_MAX_BYTES = 4 * 1024 * 1024
+# MusicBrainz answers kept on disk, one file per recording or artist MBID, so
+# re-identifying a track (a re-split, a backfill) asks nothing twice.
+MUSICBRAINZ_CACHE_DIR = CACHE_DIR / "musicbrainz"
+MUSICBRAINZ_CACHE_TTL_SEC = 30 * 24 * 3600
+# Discogs band profiles (app/pipeline/discogs.py), for bands Wikipedia has no
+# article on, asked only with the user's own token (settings.discogs_token).
+# Discogs allows 60 requests a minute to a client with a token, so one a
+# second across the process. Each request is abandoned after
+# TIMEOUT_DISCOGS_REQUEST seconds; a 429 (or a 502/503) is asked again up to
+# DISCOGS_RETRIES times, waiting what Retry-After says up to
+# DISCOGS_RETRY_MAX_WAIT_SEC, never past DISCOGS_REQUEST_BUDGET_SEC for the
+# one request. GET /api/jobs/{id}/artist-extra gives the whole lookup (a
+# search, a few releases to check, the artist and its releases: about seven
+# requests) DISCOGS_LOOKUP_BUDGET_SEC before it answers without.
+DISCOGS_API = "https://api.discogs.com"
+DISCOGS_MIN_INTERVAL_SEC = 1.0
+TIMEOUT_DISCOGS_REQUEST = _env_int("STEMDECK_TIMEOUT_DISCOGS_REQUEST", 8)
+DISCOGS_RETRIES = 2
+DISCOGS_RETRY_BACKOFF_SEC = 2.0
+DISCOGS_RETRY_MAX_WAIT_SEC = 10.0
+DISCOGS_REQUEST_BUDGET_SEC = 20.0
+DISCOGS_LOOKUP_BUDGET_SEC = _env_int("STEMDECK_DISCOGS_LOOKUP_BUDGET_SEC", 45)
+# A name typed in the artist box, searched on Discogs (GET /api/discogs/artist):
+# the search and the profiles of its first few artists, one a second, so the
+# user can tell "Nihil (2)" from "Nihil (5)". What is not in by then is left
+# out rather than waited for.
+DISCOGS_SEARCH_BUDGET_SEC = _env_int("STEMDECK_DISCOGS_SEARCH_BUDGET_SEC", 15)
+# An artist's release list at 100 a page is well under a megabyte.
+DISCOGS_MAX_BYTES = 2 * 1024 * 1024
+# Answers kept on disk, one file per request, as MusicBrainz's are.
+DISCOGS_CACHE_DIR = CACHE_DIR / "discogs"
+DISCOGS_CACHE_TTL_SEC = 30 * 24 * 3600
+# The work behind a soundtrack or cast recording (app/pipeline/work_lookup.py):
+# the musical, film or series a job's song is from, found on Wikidata beside
+# the band. Past this many seconds the tag backfill answers without it.
+TIMEOUT_WORK_BACKFILL = _env_int("STEMDECK_TIMEOUT_WORK_BACKFILL", 30)
+# How far up Wikidata's "subclass of" a work's class is followed to find a
+# kind of work it is. Three reaches "animated television series" from
+# "anime television series"; further only finds classes too broad to mean it.
+WORK_CLASS_DEPTH = 3
+# A cast recording comes out months after the show opens, and a soundtrack
+# can come out a little before its film. A work first shown more than this
+# many years after the recording came out cannot be what it is from.
+WORK_YEAR_SLACK = 1
+
+# A job's lyrics, found on LRCLIB (lrclib.net) while it separates and kept
+# beside its stems as LYRICS_FILE (app/pipeline/lyrics_lookup.py). LRCLIB asks
+# clients to name themselves and link their homepage.
+LRCLIB_API = "https://lrclib.net/api"
+LRCLIB_USER_AGENT = (
+    "StemDeck (https://github.com/stemdeckapp/stemdeck; self-hosted stem separation)"
+)
+LYRICS_FILE = "lyrics.json"
+# When LRCLIB was asked and no version was kept: the versions it had, for the
+# tab to offer, and when it was asked. The tag backfill does not ask again for
+# LYRICS_NOT_FOUND_RETRY_SEC; lyrics.json from any source settles it for good.
+LYRICS_CANDIDATES_FILE = "lyrics_candidates.json"
+LYRICS_NOT_FOUND_RETRY_SEC = _env_int("STEMDECK_LYRICS_NOT_FOUND_RETRY_DAYS", 30) * 24 * 3600
+# Each request is abandoned after this many seconds; /api/get can be slow when
+# LRCLIB has to look further afield for an exact match.
+TIMEOUT_LYRICS_LOOKUP = _env_int("STEMDECK_TIMEOUT_LYRICS_LOOKUP", 10)
+# No further request is started this many seconds into a lookup. The cascade
+# is at most five requests, and all of them run beside separation.
+LYRICS_LOOKUP_BUDGET_SEC = _env_int("STEMDECK_LYRICS_LOOKUP_BUDGET_SEC", 30)
+# LRCLIB answers 503 or 429 when it is busy, for a moment. Each request is
+# asked again this many times, waiting LYRICS_LOOKUP_RETRY_SEC and then twice
+# that, within the lookup's budget, so one busy moment does not cost a song
+# its lyrics.
+LYRICS_LOOKUP_RETRIES = 2
+LYRICS_LOOKUP_RETRY_SEC = 1.0
+# How long a finished pipeline waits for a lookup still in flight. Short for
+# the same reason as the band's: the tab looks for lyrics itself when a track
+# has none.
+LYRICS_LOOKUP_GRACE_SEC = _env_int("STEMDECK_LYRICS_LOOKUP_GRACE_SEC", 2)
+# How long the lookup waits for the identification running beside it (a
+# fingerprint, then MusicBrainz at one request a second) before it goes by the
+# tags instead. Both run beside separation, so the wait costs an import nothing.
+LYRICS_IDENTITY_WAIT_SEC = _env_int("STEMDECK_LYRICS_IDENTITY_WAIT_SEC", 60)
+# A search answers at most 20 versions of a few kilobytes each.
+LYRICS_LOOKUP_MAX_BYTES = 8 * 1024 * 1024
+# LRCLIB lengths come from real releases, so the same recording lands within a
+# second or two; a live cut or a radio edit does not. The page's
+# SAME_RECORDING_SEC and SAME_LENGTH_SEC (static/js/lyrics*.js).
+LYRICS_SAME_RECORDING_SEC = 3
+# Other versions kept beside the one chosen, for the tab to offer.
+LYRICS_OTHERS_MAX = 11
+# Moving the timing of lyrics from a version of another length onto the track
+# (app/pipeline/lyrics_align.py): the shifts tried, how near a line's start the
+# voice's rise is looked for, and how clear the best shift must be: this many
+# standard deviations above all shifts, this many times the best shift a
+# second or more away, and this share of the lines on a rise of the voice.
+# Measured on six library tracks' vocals stems against their LRCLIB versions:
+# the same recording scored z 5.1 to 7.3, 1.24 to 1.48 and 66 to 94% of lines
+# (two songs of even, repeating lines scored 1.06 and stay unverified); a
+# different performance of the song z 2.7, 1.03, 55%; scattered synthetic
+# singing at most z 4.9, 1.33, 35%.
+LYRICS_ALIGN_MAX_OFFSET_SEC = 60
+LYRICS_ALIGN_TOLERANCE_SEC = 0.2
+LYRICS_ALIGN_MIN_LINES = 6
+LYRICS_ALIGN_MIN_Z = 4.5
+LYRICS_ALIGN_MIN_RATIO = 1.15
+LYRICS_ALIGN_MIN_HITS = 0.6
+# LRCLIB's version the track's own length ("timing": "exact") is checked the
+# same way, and moved only when the voice clearly starts at least this much
+# later or earlier: a copy of the right length can still be timed to another
+# cut (Green Day "Basket Case": the video's lines start 16 s after the copy's).
+LYRICS_ALIGN_EXACT_MIN_SHIFT_SEC = 1.0
+# How long deleting a job waits for its lyrics timing to stop and let go of
+# the vocals stem (the worker is terminated, then killed after 5 s).
+RETIME_DELETE_WAIT_SEC = 15
+# How far the Lyrics tab's Align panel may move a track's lyrics, either way
+# ("offset_sec" in lyrics.json, POST /api/jobs/{id}/lyrics/offset): a long
+# intro or a medley's later verse, and no further.
+LYRICS_OFFSET_MAX_SEC = 600
+# Lyrics timed line by line to the singing (app/pipeline/lyrics_retime.py).
+# The words Whisper heard in the vocals are kept beside lyrics.json in this
+# file, so timing them again costs no second pass.
+LYRICS_TRANSCRIPT_FILE = "lyrics_transcript.json"
+# The result is kept only when at least this share of the lyrics' syllables
+# was matched to heard words, and this share of the lines anchored where they
+# are sung. Measured on 58 songs in ten languages: every one timed well
+# matched 0.48 or more and anchored 0.52 or more of its lines; the timings
+# that must not be kept (a romanised Japanese copy, a remix's lyrics, German
+# transcribed as English, a transcription led astray by a prompt of the
+# lyrics) matched 0.00 to 0.26 and anchored 0.00 to 0.32.
+LYRICS_RETIME_MIN_MATCHED = 0.35
+LYRICS_RETIME_MIN_LINES_SHARE = 0.45
+# The alignment's size cap, lyric tokens times heard tokens: its back
+# pointers take two bytes a cell. A long Chinese song is about 1500 x 1500.
+LYRICS_RETIME_MAX_CELLS = 12_000_000
+# A manual timing (PUT .../lyrics/user-synced) has at most this many lines,
+# and it or a line-by-line timing at most this many characters: word stamps
+# add ten a word to lyrics of up to 100000.
+LYRICS_USER_SYNCED_MAX_LINES = 2000
+LYRICS_TIMED_MAX_CHARS = 400_000
+# Lyrics that lost their letters outside ASCII, mended from a reference that
+# has them (app/pipeline/lyrics_repair.py). A copy with no intact twin on
+# LRCLIB is checked against the audio only when it has at least this many
+# words, none with such a letter, and fewer than this share of them common
+# English words. Measured on LRCLIB copies: four English songs (171 to 676
+# words) scored 0.23 to 0.27 on that list, eleven Polish copies (Kukulska,
+# Kayah, Bisz, stripped or not) 0.
+LYRICS_STRIPPED_CHECK_MIN_WORDS = 40
+LYRICS_STRIPPED_ENGLISH_MAX_SHARE = 0.1
+# Then Whisper decides the language from the vocals, and only a language
+# written with such letters, detected with at least this probability, goes
+# on to a transcription. Languages written in another script are left out:
+# a copy of theirs in Latin letters is a transliteration, which a
+# transcription cannot mend.
+LYRICS_REPAIR_LANGUAGES = frozenset(
+    [
+        "pl",
+        "cs",
+        "sk",
+        "sl",
+        "hr",
+        "bs",
+        "hu",
+        "ro",
+        "tr",
+        "de",
+        "fr",
+        "pt",
+        "es",
+        "ca",
+        "gl",
+        "it",
+        "vi",
+        "lt",
+        "lv",
+        "et",
+        "fi",
+        "is",
+        "fo",
+        "da",
+        "no",
+        "nn",
+        "sv",
+        "sq",
+        "mt",
+        "lb",
+    ]
+)
+LYRICS_REPAIR_MIN_LANGUAGE_PROB = 0.8
+# And the transcription must bear it out: at least this many words given
+# their letters back, this share of the words paired with what Whisper heard,
+# and this share of those pairs given letters. A song written without accents
+# in any of those languages pairs the same way and gives back next to none.
+LYRICS_REPAIR_MIN_RESTORED = 5
+LYRICS_REPAIR_MIN_ALIGNED = 0.4
+LYRICS_REPAIR_MIN_RESTORED_SHARE = 0.1
+# A word no sure pair covered (a chorus the transcription skipped, a word
+# beside a misheard one) takes the spelling the song's sure pairs gave it
+# elsewhere, when they gave it only that one, at least this many times, and
+# never kept it as it is. On "W biegu" 1 mends 49 words against 46 for 2, the
+# three being repeats of "biegne", "cigle" and "pno" whose other occurrence
+# was heard.
+LYRICS_REPAIR_VOCABULARY_MIN = 1
+# The in-order pairing is quadratic: words times reference words beyond this
+# are not paired at all (a song is a few hundred of each).
+LYRICS_REPAIR_ALIGN_MAX_CELLS = 4_000_000
+
+# Lyrics transcribed from the vocals stem with Whisper when no lookup found
+# any (app/pipeline/transcribe.py). Whether it runs is the transcribe_lyrics
+# setting. Weights download on first use into <TORCH_HOME>/whisper, beside the
+# Demucs checkpoints, and are verified by Whisper's own SHA-256 check.
+#
+# large-v3-turbo on a GPU: large-v3's encoder with a 4-layer decoder, 1.6 GB.
+# small on a CPU, or on a GPU without room for turbo: 0.5 GB.
+TRANSCRIBE_MODEL_GPU = os.environ.get("STEMDECK_WHISPER_MODEL_GPU", "").strip() or "turbo"
+TRANSCRIBE_MODEL_CPU = os.environ.get("STEMDECK_WHISPER_MODEL_CPU", "").strip() or "small"
+# Free VRAM the GPU model needs, checked in the worker before loading, since
+# the Demucs worker keeps its own allocation resident on the same card.
+# Measured on an RTX 3080 (Nirvana "Lithium", 255 s): turbo held in fp16
+# peaked at 2172 MB reserved by torch, 2463 MB on the card with the CUDA context.
+TRANSCRIBE_GPU_MIN_FREE_MB = _env_int("STEMDECK_WHISPER_GPU_MIN_FREE_MB", 3072)
+# Below this, even the small model is not tried on the GPU and runs on the CPU.
+TRANSCRIBE_SMALL_GPU_MIN_FREE_MB = _env_int("STEMDECK_WHISPER_SMALL_GPU_MIN_FREE_MB", 1536)
+# The whole stage, including a first-run model download on a slow connection.
+TIMEOUT_TRANSCRIBE = max(60, _env_int("STEMDECK_TIMEOUT_TRANSCRIBE", 30 * 60))
+# No output for this long is a hang. Whisper reports progress once per 30 s
+# window of audio, which the small model on a CPU finishes well inside it.
+TIMEOUT_TRANSCRIBE_STALL = max(30, _env_int("STEMDECK_TIMEOUT_TRANSCRIBE_STALL", 300))
+# Vocals quieter than this, as stem_presence (0-100, relative to the loudest
+# stem), are not worth transcribing: Whisper invents words over silence. A stem
+# that is absent from a track measured 0-2 across six library tracks.
+TRANSCRIBE_MIN_VOCAL_PRESENCE = 3
+# Skip silent stretches longer than this around a suspected hallucination
+# (Whisper's hallucination_silence_threshold). An isolated vocal has long
+# instrumental gaps, which is where Whisper makes up text.
+TRANSCRIBE_HALLUCINATION_SILENCE_SEC = 2.0
+# Lines are Whisper's segments, broken further at a pause at least this long
+# between two words, and at a comma or a pause once a line is this many
+# characters long. Nothing is ever longer than the hard cap.
+TRANSCRIBE_LINE_BREAK_GAP_SEC = 0.8
+TRANSCRIBE_LINE_SOFT_CHARS = 40
+TRANSCRIBE_LINE_HARD_CHARS = 64
+# A gap between two words at least this long is written as an end stamp, so
+# the karaoke wipe waits through it instead of stretching the first word.
+TRANSCRIBE_WORD_GAP_SEC = 0.3
+# A silence at least this long between two lines starts a new stanza (a blank
+# line) in the plain text.
+TRANSCRIBE_STANZA_GAP_SEC = 4.0
 
 # Beat-grid analysis parameters. 22050 Hz is plenty for onset detection (the
 # percussive energy that matters lives well under 11 kHz) and keeps the decode

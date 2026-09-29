@@ -9,7 +9,7 @@ import {
 import { destroyPlayer, wireUpAudio, setWaveformLoading, updateFooterTrack } from "./player.js";
 import { notifyFailure, dismissFailuresByJobId } from "./notifications.js";
 import { getStagePhrases } from "./phrases.js";
-import { addTrackToLibrary, setCurrentTrack, updateTrackStatus, applyStemPresenceCards } from "./catalog.js";
+import { addTrackToLibrary, setCurrentTrack, updateTrackStatus, applyStemPresenceCards, libraryAudioTags, libraryArtist, libraryIdentity, libraryWork, paintFinishedTrackNames } from "./catalog.js";
 import { initSections } from "./sections.js";
 import { importPlaylist, looksLikePlaylist } from "./playlist.js";
 import { t } from "./i18n.js";
@@ -164,10 +164,52 @@ function stopJobPolling() {
   }
 }
 
-// `retry` controls the button: "Try again" sends the user back to the URL field
-// to start a fresh import, which is right for an import failure and wrong for
-// anything else. Export failures pass retry:false and get a plain Dismiss, since
-// the error box has no other way to be cleared.
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// A circled "!" in the danger colour, so the box reads as an error at a glance.
+function errorIcon() {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "error-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("aria-hidden", "true");
+  for (const [tag, attrs] of [
+    ["circle", { cx: 12, cy: 12, r: 9.5 }],
+    ["line", { x1: 12, y1: 7.5, x2: 12, y2: 13 }],
+    ["line", { x1: 12, y1: 16.5, x2: 12, y2: 16.6 }],
+  ]) {
+    const part = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) part.setAttribute(k, String(v));
+    svg.append(part);
+  }
+  return svg;
+}
+
+function hideError() {
+  errorEl.classList.add("hidden");
+}
+
+// Escape closes the box too, as it closes every other popup. The box sits
+// above everything, so it is the one an Escape is for: heard first (capture,
+// on the window) and used up there, so the artist box or Settings open beneath
+// it stay open until a second Escape.
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.key !== "Escape" || errorEl.classList.contains("hidden")) return;
+    hideError();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  },
+  true,
+);
+
+// `retry` adds "Try again", which sends the user back to the URL field to start
+// a fresh import: right for an import failure and wrong for anything else. The
+// close button is always there, so no failure can leave the box stuck open.
 export function showError(message, detail, { retry = true } = {}) {
   delete errorEl.dataset.kind; // see showPlaybackError
   errorEl.textContent = "";
@@ -182,18 +224,29 @@ export function showError(message, detail, { retry = true } = {}) {
     detailEl.textContent = detail;
     msg.appendChild(detailEl);
   }
-  const btn = document.createElement("button");
-  btn.className = "retry-btn";
-  btn.type = "button";
-  btn.textContent = retry ? t("job.tryAgain") : t("job.dismiss");
-  btn.addEventListener("click", () => {
-    errorEl.classList.add("hidden");
-    if (retry) {
+  const actions = document.createElement("div");
+  actions.className = "error-actions";
+  if (retry) {
+    const btn = document.createElement("button");
+    btn.className = "retry-btn";
+    btn.type = "button";
+    btn.textContent = t("job.tryAgain");
+    btn.addEventListener("click", () => {
+      hideError();
       urlInput.focus();
       urlInput.select();
-    }
-  });
-  errorEl.append(msg, btn);
+    });
+    actions.append(btn);
+  }
+  const close = document.createElement("button");
+  close.className = "error-close";
+  close.type = "button";
+  close.textContent = String.fromCodePoint(0xd7);
+  close.title = t("job.dismiss");
+  close.setAttribute("aria-label", t("job.dismiss"));
+  close.addEventListener("click", hideError);
+  actions.append(close);
+  errorEl.append(errorIcon(), msg, actions);
   errorEl.classList.remove("hidden");
 }
 
@@ -344,6 +397,9 @@ async function finishDoneJob(state) {
     finalState.has_video ?? false,
   );
   initSections(finalState.job_id, finalState.sections, finalState.duration || 0);
+  // The card names the song and its band now, as it does when the track is
+  // opened from the library, rather than only after it is reopened (#699).
+  paintFinishedTrackNames(finalState.job_id);
 }
 
 function applyState(state) {
@@ -377,6 +433,20 @@ function applyState(state) {
       sectionsSource: state.sections_source,
       sourceUrl: jobSources.get(state.job_id) || (isForeground ? urlInput.value : ""),
       createdAt: state.created_at,
+      // So a track that has just finished importing already knows its artist
+      // and title (#699), rather than only once it is reopened from the library.
+      ...(state.audio_tags ? { audioTags: libraryAudioTags(state.audio_tags) } : {}),
+      // And its band, found by the server while the job ran, so the artist box
+      // and the Lyrics tab have it with no lookup of their own. A band already
+      // saved on the track is kept (see addTrackToLibrary).
+      ...(libraryArtist(state.artist) ? { artist: libraryArtist(state.artist) } : {}),
+      // The recording it was identified as, and the musical or film a
+      // soundtrack is from, on the same terms.
+      ...(libraryIdentity(state.identity) ? { identity: libraryIdentity(state.identity) } : {}),
+      ...(libraryWork(state.work) ? { work: libraryWork(state.work) } : {}),
+      // A server that sends "work" looked for it while the job ran, so the
+      // track never needs to ask it again (catalog.js backfillAudioTags).
+      ...(state.status === "done" && "work" in state ? { workChecked: true } : {}),
     });
   }
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -11,6 +12,7 @@ from yt_dlp import YoutubeDL
 from app.core.config import bundled_js_runtime, ffmpeg_dir, js_solver_available
 from app.core.models import Job, JobCancelled, _set
 from app.core.settings import get_cookies_file, get_max_duration_sec, get_video_max_height
+from app.pipeline.audio_tags import tags_from_ytdlp
 
 logger = logging.getLogger("stemdeck.download")
 
@@ -81,9 +83,51 @@ def _with_retries(job: Job, fn, *, what: str):
                     wait,
                 )
                 _set(job, stage=f"Network error — retrying ({attempt + 1}/{_MAX_RETRIES})...")
-                time.sleep(wait)
+                _sleep_unless_cancelled(job, wait)
             else:
                 raise
+
+
+# How often a wait on yt-dlp looks at the job's cancel flag.
+_CANCEL_POLL_SEC = 0.1
+
+
+def _sleep_unless_cancelled(job: Job, seconds: float) -> None:
+    """Sleep ``seconds``, or raise JobCancelled as soon as the job is."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        if job.cancel_requested:
+            raise JobCancelled()
+        time.sleep(min(left, _CANCEL_POLL_SEC))
+
+
+def _cancellable(job: Job, fn):
+    """``fn()``, run on a thread of its own so a cancel stops the wait for it.
+
+    yt-dlp's metadata probe has no progress hook to raise from, and resolving
+    a YouTube link takes up to twenty seconds, all of it deaf to Cancel. The
+    probe writes nothing, so one abandoned by a cancel is left to finish on
+    its own; only its answer is dropped."""
+    result: dict = {}
+
+    def run() -> None:
+        try:
+            result["value"] = fn()
+        # BaseException on purpose: it is raised again on the job's thread
+        # below. Narrower, a SystemExit from yt-dlp would end this thread
+        # quietly and the import would go on with no answer.
+        except BaseException as exc:
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, name=f"probe-{job.id}", daemon=True)
+    worker.start()
+    while worker.is_alive():
+        if job.cancel_requested:
+            raise JobCancelled()
+        worker.join(_CANCEL_POLL_SEC)
+    if "error" in result:
+        raise result["error"]
+    return result.get("value")
 
 
 # YouTube refusing to serve us at all, as opposed to a video being unavailable.
@@ -431,6 +475,40 @@ def expand_playlist(url: str, limit: int) -> dict:
     }
 
 
+def fetch_audio_tags(url: str) -> dict[str, str] | None:
+    """A link's tags from its metadata alone, for a track imported before tags
+    were read (#699). Nothing is downloaded.
+
+    The URL goes through validate_youtube_url here as well as at the caller:
+    this is where the fetch happens, so this is where the SSRF boundary (#173)
+    has to hold. Raises on any failure; the caller decides what that means.
+
+    Same cookie rule as an import (#432): without them first, with them only
+    once YouTube's bot check has turned the request away. _with_cookie_fallback
+    itself is not reused because it reports progress on a job's stage, and the
+    job here is finished.
+    """
+    url = validate_youtube_url(url)
+
+    def probe(use_cookies: bool) -> dict:
+        opts = {
+            **_base_ydl_opts(_ALLOWED_EXTRACTORS, use_cookies=use_cookies),
+            "noplaylist": True,
+            "skip_download": True,
+        }
+        with YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False) or {}
+
+    try:
+        info = probe(False)
+    except Exception as exc:
+        if not _is_bot_check(exc) or get_cookies_file() is None:
+            raise
+        logger.info("tag lookup hit YouTube's bot check; retrying with cookies")
+        info = probe(True)
+    return tags_from_ytdlp(info if isinstance(info, dict) else None)
+
+
 def _download_video_track(job: Job, url: str, job_dir: Path, *, use_cookies: bool = False) -> None:
     """Best-effort: download a video-only H.264/MP4 stream to video.mp4 for the
     MP4 export (issue #219). The audio source is downloaded separately as
@@ -507,8 +585,12 @@ def download(job: Job, url: str, job_dir: Path) -> Path:
     # used to fail the whole job immediately (#279).
     def _probe(use_cookies: bool) -> dict:
         opts = {**_base_ydl_opts(_ALLOWED_EXTRACTORS, use_cookies=use_cookies), "noplaylist": True}
-        with YoutubeDL(opts) as ydl:
-            return ydl.extract_info(url, download=False) or {}
+
+        def ask() -> dict:
+            with YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=False) or {}
+
+        return _cancellable(job, ask)
 
     # The bot check lands on this first request, so this is where the cookie
     # fallback is decided. Whether it engaged is remembered below so the fetch
@@ -575,6 +657,7 @@ def download(job: Job, url: str, job_dir: Path) -> Path:
     seen: set[str] = set()
     deduped = [t for t in raw_tags if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
     _set(job, tags=deduped[:8] or None)
+    _set(job, audio_tags=tags_from_ytdlp(info))
 
     # Best-effort: fetch the real video stream for the MP4 export.
     # Non-fatal -- on any failure the job proceeds audio-only.

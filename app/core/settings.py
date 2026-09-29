@@ -14,6 +14,9 @@ at startup), so the Settings UI can change them without a restart:
 - `cookies_file`      — optional cookies.txt handed to yt-dlp for YouTube.
 - `auto_delete_jobs`  — whether finished jobs are deleted after a while (off).
 - `auto_delete_days`  — how long they are kept when that is on.
+- `acoustid_api_key`  - the user's AcoustID key, for fingerprint identification.
+- `discogs_token`     - the user's Discogs token, for band profiles.
+- `transcribe_lyrics` - Whisper lyrics when none are found: auto | on | off.
 
 Defaults fall back to the config.py constants (which honor their env vars), so
 nothing changes until the user overrides a value.
@@ -24,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import time
 import uuid
@@ -591,3 +595,155 @@ def set_separation_quality(value: str) -> str:
         _ensure()["separation_quality"] = choice
         _save()
         return choice
+
+
+# ── transcribe_lyrics ──
+# Whether a job with no lyrics found gets them transcribed from its vocals stem
+# with Whisper (app/pipeline/transcribe.py). "auto" (default) does it when the
+# job was separated on an NVIDIA GPU (cuda) only. Anywhere else, Apple's MPS
+# included, Whisper runs on the CPU, about 200 s a song rather than 30 s, so
+# "auto" leaves it off; "on" and "off" force it. Read per job, so
+# a change applies to the next import. STEMDECK_TRANSCRIBE_LYRICS seeds the
+# default for env-based deployments.
+_TRANSCRIBE_CHOICES = ("auto", "on", "off")
+
+
+def _default_transcribe_lyrics() -> str:
+    env = os.environ.get("STEMDECK_TRANSCRIBE_LYRICS", "").strip().lower()
+    return env if env in _TRANSCRIBE_CHOICES else "auto"
+
+
+def get_transcribe_lyrics() -> str:
+    with _LOCK:
+        v = _ensure().get("transcribe_lyrics")
+        return (
+            v if isinstance(v, str) and v in _TRANSCRIBE_CHOICES else _default_transcribe_lyrics()
+        )
+
+
+def set_transcribe_lyrics(value: str) -> str:
+    choice = (value or "").strip().lower()
+    if choice not in _TRANSCRIBE_CHOICES:
+        raise ValueError("transcribe_lyrics must be one of: " + ", ".join(_TRANSCRIBE_CHOICES))
+    with _LOCK:
+        _ensure()["transcribe_lyrics"] = choice
+        _save()
+        return choice
+
+
+def transcribe_lyrics_enabled(device: str | None) -> bool:
+    """Whether a job separated on ``device`` gets its lyrics transcribed.
+
+    ``device`` is the job's compute_device, so a GPU job that fell back to the
+    CPU ("cpu (fallback from cuda)") counts as a CPU one under "auto": the GPU
+    has just failed, and a CPU pass is the slow case "auto" exists to avoid.
+    """
+    choice = get_transcribe_lyrics()
+    if choice == "auto":
+        return device == "cuda"
+    return choice == "on"
+
+
+def lyrics_mending_enabled() -> bool:
+    """Whether found lyrics that lost their accents may be mended from the
+    vocals (transcribe.mend_lyrics), on any device unless the setting is "off".
+
+    Unlike a transcription, "auto" does not keep this to CUDA: its gates hold
+    it to the rare song whose lyrics are missing letters, which otherwise
+    shows broken words on every CPU and Mac install."""
+    return get_transcribe_lyrics() != "off"
+
+
+# ── acoustid_api_key ──
+# The user's own AcoustID application key, for identifying a track by its
+# audio fingerprint (app/pipeline/identify.py). Entered in Settings and never
+# shipped: AcoustID keys are per application and free to register. Without
+# one, nothing is fingerprinted and identification falls back to searching
+# MusicBrainz by the tags.
+#
+# A secret in the sense that it is the user's: never logged, and never handed
+# back by the API. /api/settings publishes only whether one is set and its
+# last two characters, so the field can show which key it holds. Real keys
+# are about ten characters, so two is a hint and not a useful part of one.
+_ACOUSTID_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+ACOUSTID_KEY_HINT_CHARS = 2
+
+
+def acoustid_key_format_ok(key: str) -> bool:
+    """Whether ``key`` has the shape of an AcoustID key at all."""
+    return bool(_ACOUSTID_KEY_RE.match(key))
+
+
+def get_acoustid_api_key() -> str | None:
+    with _LOCK:
+        value = _ensure().get("acoustid_api_key")
+        return value if isinstance(value, str) and _ACOUSTID_KEY_RE.match(value) else None
+
+
+def set_acoustid_api_key(value: str | None) -> str | None:
+    """Persist the key, or clear it when given empty/None. Raises ValueError,
+    without the value in the message, when it cannot be an AcoustID key."""
+    with _LOCK:
+        if value is None or not str(value).strip():
+            _ensure().pop("acoustid_api_key", None)
+            _save()
+            return None
+        key = str(value).strip()
+        if not _ACOUSTID_KEY_RE.match(key):
+            raise ValueError("acoustid_api_key must be 8 to 64 letters, digits, - or _")
+        _ensure()["acoustid_api_key"] = key
+        _save()
+        return key
+
+
+def acoustid_api_key_hint() -> str | None:
+    """The last two characters of the key, for the Settings field, or None."""
+    key = get_acoustid_api_key()
+    return key[-ACOUSTID_KEY_HINT_CHARS:] if key else None
+
+
+# ── discogs_token ──
+# The user's own Discogs personal access token, for band profiles, members and
+# releases of bands Wikipedia has no article on. Entered in Settings and never
+# shipped: Discogs tokens are per user and free. Without one, Discogs is never
+# asked.
+#
+# A secret as the AcoustID key is: never logged, never put in a URL, and never
+# handed back by the API, which publishes only whether one is set and its last
+# two characters. Discogs tokens are 40 letters and digits; the range is kept
+# loose so a change in their length does not lock anyone out.
+_DISCOGS_TOKEN_RE = re.compile(r"^[A-Za-z0-9]{20,80}$")
+DISCOGS_TOKEN_HINT_CHARS = 2
+
+
+def discogs_token_format_ok(token: str) -> bool:
+    """Whether ``token`` has the shape of a Discogs personal access token."""
+    return bool(_DISCOGS_TOKEN_RE.match(token))
+
+
+def get_discogs_token() -> str | None:
+    with _LOCK:
+        value = _ensure().get("discogs_token")
+        return value if isinstance(value, str) and _DISCOGS_TOKEN_RE.match(value) else None
+
+
+def set_discogs_token(value: str | None) -> str | None:
+    """Persist the token, or clear it when given empty/None. Raises ValueError,
+    without the value in the message, when it cannot be a Discogs token."""
+    with _LOCK:
+        if value is None or not str(value).strip():
+            _ensure().pop("discogs_token", None)
+            _save()
+            return None
+        token = str(value).strip()
+        if not _DISCOGS_TOKEN_RE.match(token):
+            raise ValueError("discogs_token must be 20 to 80 letters or digits")
+        _ensure()["discogs_token"] = token
+        _save()
+        return token
+
+
+def discogs_token_hint() -> str | None:
+    """The last two characters of the token, for the Settings field, or None."""
+    token = get_discogs_token()
+    return token[-DISCOGS_TOKEN_HINT_CHARS:] if token else None

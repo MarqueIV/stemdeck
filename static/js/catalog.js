@@ -207,6 +207,8 @@ let folders = [];
 let tracks = {};
 let _deletedJobIds = new Set();
 let _currentTrackId = null;
+// The open track's tags as the last render() saw them. See setCurrentTrack().
+let _renderedTagsKey = "";
 let _loadTrackToken = 0;
 let catalogView = "library";
 let catalogSearchQuery = "";
@@ -399,6 +401,71 @@ function saveState() {
 
 // ─── Track management ───
 
+/**
+ * A job's audio_tags as the library keeps them (#699): artist, title and album
+ * as they are, and embedded lyrics reduced to `hasLyrics: true`. The lyrics run
+ * to 20,000 characters and the library store is rewritten whole on every
+ * change to any track, so they stay on the server; the Lyrics tab fetches them
+ * once, into a store entry of its own, the first time it needs them.
+ */
+export function libraryAudioTags(tags) {
+  if (!tags || typeof tags !== "object") return null;
+  const { lyrics, ...rest } = tags;
+  return lyrics ? { ...rest, hasLyrics: true } : rest;
+}
+
+/**
+ * The band a job's state carries (#699), found by the server while the job
+ * ran, as the library keeps a band: { id, name, englishName } with id a
+ * Wikidata item. Null for anything else, so a malformed answer never reaches
+ * the artist box.
+ */
+export function libraryArtist(artist) {
+  if (!artist || typeof artist !== "object" || !/^Q\d+$/.test(String(artist.id || ""))) return null;
+  return { id: artist.id, name: String(artist.name || ""), englishName: String(artist.englishName || "") };
+}
+
+const WORK_KINDS = new Set(["musical", "film", "tv", "other"]);
+
+/**
+ * The work a job's state carries: the musical, film or series a soundtrack
+ * or cast recording is from, found by the server while the job ran
+ * (app/pipeline/work_lookup.py). { id, kind, name, englishName } with id a
+ * Wikidata item, or null for anything else.
+ */
+export function libraryWork(work) {
+  const artist = libraryArtist(work);
+  if (!artist || !WORK_KINDS.has(work.kind)) return null;
+  return { ...artist, kind: work.kind };
+}
+
+/**
+ * Which recording a job was identified as (app/pipeline/identify.py), as the
+ * library keeps it: the names and whether it is a soundtrack, not the ids and
+ * scores, since the store is rewritten whole on every change. Null when the
+ * state carries none.
+ */
+export function libraryIdentity(identity) {
+  if (!identity || typeof identity !== "object" || !identity.title) return null;
+  const text = (value) => (typeof value === "string" ? value : "");
+  return {
+    source: text(identity.source),
+    title: text(identity.title),
+    artist: text(identity.artist),
+    album: text(identity.album),
+    // The year the album first came out, when the server knew it.
+    ...(Number.isInteger(identity.year) ? { year: identity.year } : {}),
+    secondaryTypes: Array.isArray(identity.secondary_types)
+      ? identity.secondary_types.filter((t) => typeof t === "string").slice(0, 12)
+      : [],
+    // The song's other titles ("Good Day" for 좋은 날), which lyrics may be
+    // filed under.
+    titleAliases: Array.isArray(identity.title_aliases)
+      ? identity.title_aliases.filter((t) => typeof t === "string").slice(0, 6)
+      : [],
+  };
+}
+
 export function addTrackToLibrary(track) {
   // track: { id, title, thumb, stems, status, sourceUrl }
   const existingId = findTrackBySource(track.sourceUrl, track.id);
@@ -425,6 +492,12 @@ export function addTrackToLibrary(track) {
   tracks[track.id] = {
     ...existing,
     ...track,
+    // A band already on the track, saved in the artist box or found before,
+    // is never replaced by the one the server found (#699).
+    ...(existing.artist ? { artist: existing.artist } : {}),
+    // Likewise the identity and the work behind a soundtrack, once known.
+    ...(existing.identity ? { identity: existing.identity } : {}),
+    ...(existing.work ? { work: existing.work } : {}),
     createdAt: existing.createdAt ?? track.createdAt ?? (Date.now() / 1000),
     favorite: existing.favorite ?? false,
   };
@@ -440,6 +513,168 @@ export function addTrackToLibrary(track) {
   }
   saveState();
   render();
+}
+
+/**
+ * The open track, for the lyrics panel: its id, title and length in seconds,
+ * or null when none is open.
+ */
+export function getCurrentTrackInfo() {
+  const track = tracks[_currentTrackId];
+  if (!track) return null;
+  return {
+    id: _currentTrackId,
+    title: track.title || "",
+    duration: Number(track.duration) || 0,
+    // What the file itself was tagged with at import, when it was: artist,
+    // title, album, and lyrics if it carried them. Null for tracks imported
+    // before tags were read, and for sources that had none.
+    audioTags: track.audioTags || null,
+    // What the track was identified as (libraryIdentity), or null.
+    identity: track.identity || null,
+  };
+}
+
+/**
+ * The band saved on the open track from the artist box (#699), as
+ * { id, name } with id a Wikidata item, or null when none has been saved.
+ */
+export function getCurrentTrackArtist() {
+  const artist = tracks[_currentTrackId]?.artist;
+  if (!artist || !/^Q\d+$/.test(artist.id)) return null;
+  return { id: artist.id, name: String(artist.name || ""), englishName: String(artist.englishName || "") };
+}
+
+/**
+ * The work the open track's song is from, when it is a soundtrack or a cast
+ * recording: { id, kind, name, englishName }, or null.
+ */
+export function getCurrentTrackWork() {
+  return libraryWork(tracks[_currentTrackId]?.work);
+}
+
+// Identities checked against a catalogue. "tags" only repeats what the file
+// says, which the card and the box already read from the tags themselves.
+const CONFIDENT_SOURCES = new Set(["musicbrainz", "acoustid", "lrclib"]);
+
+function confidentIdentity(track) {
+  const identity = track?.identity;
+  return identity && CONFIDENT_SOURCES.has(identity.source) ? identity : null;
+}
+
+const trimmed = (value) => String(value || "").trim();
+
+/**
+ * The song the open track is, for the head of the artist box: { title,
+ * credit, album, year, soundtrack }, from the identity the server confirmed,
+ * else from the file's tags. Null when neither names the song. `year` is the
+ * identified album's first release, so only with that album, else 0.
+ */
+export function getCurrentTrackSong() {
+  const track = tracks[_currentTrackId];
+  if (!track) return null;
+  const identity = confidentIdentity(track);
+  const tags = track.audioTags || {};
+  const title = trimmed(identity?.title) || trimmed(tags.title);
+  if (!title) return null;
+  const identityAlbum = trimmed(identity?.album);
+  return {
+    title,
+    credit: trimmed(identity?.artist) || trimmed(tags.artist),
+    album: identityAlbum || trimmed(tags.album),
+    year: identityAlbum && Number.isInteger(identity.year) ? identity.year : 0,
+    soundtrack: Boolean(libraryWork(track.work)) || Boolean(identity?.secondaryTypes?.includes("Soundtrack")),
+  };
+}
+
+/** Save a band on the open track, kept with the rest of the library. */
+export function setCurrentTrackArtist(artist) {
+  const track = tracks[_currentTrackId];
+  if (!track || !/^Q\d+$/.test(artist?.id || "")) return false;
+  track.artist = { id: artist.id, name: String(artist.name || ""), englishName: String(artist.englishName || "") };
+  saveState();
+  paintNowPlayingArtist(track);
+  return true;
+}
+
+// Beside the title on the now-playing card (#699): the musical or film a
+// soundtrack is from ("Dancing Through Life · Wicked"), since one cast
+// member's name says less about the song than the show does. Otherwise the
+// band saved on the track, else the artist its file was tagged with, else the
+// credit of the recording the server identified. None known, and the card is
+// exactly what it was before there was an artist to show. A title song
+// ("The Phantom of the Opera") would name the show twice, so it names the
+// performer instead.
+function paintNowPlayingArtist(track) {
+  const el = document.getElementById("np-artist");
+  if (!el) return;
+  let work = trimmed(libraryWork(track?.work)?.name);
+  if (work.toLowerCase() === nowPlayingTitle(track).toLowerCase()) work = "";
+  const name = trimmed(work || track?.artist?.name || track?.audioTags?.artist || confidentIdentity(track)?.artist);
+  el.textContent = name;
+  // The whole name on hover, since a long title can leave it clipped.
+  el.title = name;
+  el.hidden = !name;
+}
+
+// ─── Tags for tracks imported before they were read ───
+//
+// A track from before #699 has no audioTags, so the card, the artist box and
+// the Lyrics tab had nothing to go on. Opening one asks the server once to
+// read them now, from the upload it kept or the video's metadata, in the
+// background: the track loads exactly as it would have. The answer is kept on
+// the track with audioTagsChecked, null included, so a file with no tags is
+// asked about once ever. A failure sets nothing, and the next session asks
+// again. A 409 (the job is not finished, or the server is already reading its
+// tags) is "not yet", so the next open of the track asks again. The server
+// can take up to ~45s on a slow video metadata fetch, which is why nothing
+// waits on this. "tracktags" then tells artistInfo.js and lyrics.js, which
+// import this module and so cannot be imported back.
+const _tagsAsked = new Set(); // once per track per page load
+const _tagsPending = new Set();
+
+/** Whether the open track's tags are still being asked for. */
+export function isCurrentTrackTagsPending() {
+  return _tagsPending.has(_currentTrackId);
+}
+
+// A track imported before the server looked for the work a soundtrack is
+// from (work_lookup.py) is asked about once more, tags or not, for that and
+// the identity: workChecked marks it done. An import that finished on a
+// server that looks for it comes with the flag set (job.js).
+async function backfillAudioTags(trackId) {
+  const track = tracks[trackId];
+  const tagsKnown = track?.audioTags || track?.audioTagsChecked;
+  if (!track || (tagsKnown && track.workChecked) || track.status !== "done") return;
+  if (_tagsAsked.has(trackId)) return;
+  _tagsAsked.add(trackId);
+  _tagsPending.add(trackId);
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(trackId)}/audio-tags`, { method: "POST" });
+    if (res.status === 409) _tagsAsked.delete(trackId);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    // Kept on the track it was asked for, even if another is open by now.
+    const target = tracks[trackId];
+    if (!target) return;
+    if (!target.audioTags) target.audioTags = libraryAudioTags(data?.audio_tags);
+    target.audioTagsChecked = true;
+    // The band, when the server found it from those tags, so artistInfo.js
+    // has nothing left to look up when "tracktags" reaches it.
+    if (!target.artist) target.artist = libraryArtist(data?.artist);
+    // And the recording and the work behind a soundtrack, when the server
+    // found them. Asked once, like the tags: nothing found is an answer too.
+    if (!target.identity) target.identity = libraryIdentity(data?.identity);
+    if (!target.work) target.work = libraryWork(data?.work);
+    target.workChecked = true;
+    saveState();
+    if (_currentTrackId === trackId) paintNowPlayingNames(target);
+  } catch (err) {
+    console.warn("[catalog] reading an older track's tags failed:", err);
+  } finally {
+    _tagsPending.delete(trackId);
+    document.dispatchEvent(new CustomEvent("tracktags", { detail: { id: trackId } }));
+  }
 }
 
 export function updateTrackStatus(trackId, status) {
@@ -492,11 +727,22 @@ function stateMetadataToTrack(state, fallbackTrack) {
     sectionsSource: state.sections_source ?? fallbackTrack.sectionsSource ?? null,
     sourceUrl: state.source_url || fallbackTrack.sourceUrl,
     sourceFormat: state.source_format ?? fallbackTrack.sourceFormat ?? null,
+    // The source's own artist, title, album and lyrics (#699), read at import.
+    audioTags: state.audio_tags ? libraryAudioTags(state.audio_tags) : fallbackTrack.audioTags ?? null,
     mixUrl: state.mix_url ?? fallbackTrack.mixUrl ?? null,
     hasVideo: state.has_video ?? fallbackTrack.hasVideo ?? false,
     videoStatus: state.video_status ?? fallbackTrack.videoStatus ?? null,
     createdAt: fallbackTrack.createdAt ?? state.created_at,
     favorite: fallbackTrack.favorite ?? false,
+    // The band (#699): the one saved on the track first, since a band chosen
+    // in the artist box always wins, and the server never hears of that one,
+    // so it only survives a rebuild from server state by being carried. Else
+    // the one the server found from the tags while the job ran.
+    artist: fallbackTrack.artist ?? libraryArtist(state.artist),
+    // Which recording the server identified, and the musical or film a
+    // soundtrack is from: carried the same way.
+    identity: fallbackTrack.identity ?? libraryIdentity(state.identity),
+    work: fallbackTrack.work ?? libraryWork(state.work),
   };
 }
 
@@ -571,8 +817,32 @@ export function applyStemPresenceCards(stemPresence) {
   });
 }
 
+// The song the server identified, else the file's own title tag: the job
+// title is the filename or the video's name, which often carries the band,
+// "Official Video", "(From ... Cast Recording/2003)" and the like, and the
+// artist now has a place of its own beside it. Only the card: the library row
+// keeps the name the track was imported with.
+function nowPlayingTitle(track) {
+  return trimmed(confidentIdentity(track)?.title) || trimmed(track?.audioTags?.title) || track?.title || "";
+}
+
+function paintNowPlayingNames(track) {
+  titleEl.textContent = nowPlayingTitle(track) || i18nT("track.untitled");
+  paintNowPlayingArtist(track);
+}
+
+/**
+ * Name the song and its artist on the now-playing card for a track that has
+ * just finished importing, the way opening it from the library does. Nothing
+ * if another track is open by now.
+ */
+export function paintFinishedTrackNames(trackId) {
+  const track = tracks[trackId];
+  if (track && trackId === _currentTrackId) paintNowPlayingNames(track);
+}
+
 function applyTrackInfoToPanel(track) {
-  titleEl.textContent = track.title || i18nT("track.untitled");
+  paintNowPlayingNames(track);
   bpmChip.textContent = track.bpm ? `${track.bpm} BPM` : "— BPM";
   keyChip.textContent = track.key || "— —";
   updateFooterTrack({
@@ -701,12 +971,16 @@ function moveTrackToTrash(trackId) {
 }
 
 function setCatalogView(view) {
-  catalogView = ["trash", "favorites", "queue"].includes(view) ? view : "library";
-  // Switching to Trash, Favourites or Queue is a request to look at the
-  // sidebar, so a collapsed one comes back. Through the shared helper, or the
-  // collapse button's aria-expanded is left claiming the sidebar is still shut.
+  catalogView = ["trash", "favorites", "queue", "lyrics"].includes(view) ? view : "library";
+  // Switching to Trash, Favourites, Queue or Lyrics is a request to look at
+  // the sidebar, so a collapsed one comes back. Through the shared helper, or
+  // the collapse button's aria-expanded is left claiming the sidebar is still
+  // shut.
   if (catalogView !== "library") setSidebarCollapsed(false);
   render();
+  // The lyrics panel (lyrics.js) draws itself; this is how it learns it is on
+  // screen, without catalog.js importing it.
+  document.dispatchEvent(new CustomEvent("catalogviewchange", { detail: { view: catalogView } }));
 }
 
 function applyStoredStemSelection(track) {
@@ -828,6 +1102,12 @@ async function loadTrackIntoStudio(trackId) {
   applyTrackInfoToPanel(track);
   wireUpAudio(trackId, track.audioStems, track.duration || 0, track.thumb, track.mixUrl ?? null, track.title || "", peaksPromise, track.hasVideo ?? false, track.videoStatus ?? null);
   initSections(trackId, track.sections, track.duration || 0);
+  // Not awaited: the track is already loading, and the answer arrives as a
+  // "tracktags" event.
+  backfillAudioTags(trackId);
+  // For artistInfo.js, which finds the band from the file's tags. An event
+  // rather than an import, since that module already imports this one.
+  document.dispatchEvent(new CustomEvent("trackopen", { detail: { id: trackId } }));
 }
 
 /**
@@ -864,6 +1144,12 @@ export function setResplitTarget(track) {
 
 export function setCurrentTrack(trackId) {
   _currentTrackId = trackId;
+  // The library's Tags section shows the open track's tags, so it is rebuilt
+  // when those are not what the last render() drew. Compared by tags rather
+  // than by id: loadTrackIntoStudio() can bring a track's tags in from the
+  // server while that same track is already the open one. Anything else is
+  // patched in place, since a full render() rebuilds the whole sidebar.
+  if (openTrackTags().join("\n") !== _renderedTagsKey) { render(); return; }
   for (const el of document.querySelectorAll(".cat-item.active")) el.classList.remove("active");
   for (const el of document.querySelectorAll(`.cat-item[data-id="${trackId}"]`)) el.classList.add("active");
   for (const el of document.querySelectorAll(".strip-thumb.active")) el.classList.remove("active");
@@ -1257,6 +1543,13 @@ function wireLibraryDeleteKeys() {
 
 // ─── Rendering helpers ───
 
+/** The open track's tags, deduplicated, or none when it is in the Trash. */
+function openTrackTags() {
+  const track = tracks[_currentTrackId];
+  if (!track || getTrashFolder()?.items.includes(_currentTrackId)) return [];
+  return [...new Set(track.tags ?? [])];
+}
+
 function getAllTags(trashIds) {
   const counts = {};
   for (const [id, track] of Object.entries(tracks)) {
@@ -1322,13 +1615,11 @@ function trackSublineHtml(track, { inTrash = false } = {}) {
   } else if (track.status === "error") {
     parts = [i18nT("notifKind.importFailed")];
   } else {
-    const stems = stemCountOf(track);
-    // A done track that knows neither its length nor its stems says nothing
-    // rather than "0 stems", which would be a claim and a wrong one.
-    parts = [
-      track.duration ? fmtTime(track.duration) : "",
-      stems ? i18nPlural("footer.stemsCount", stems) : "",
-    ];
+    // Just the length. The stem count was here too, but every row carrying
+    // "6 stems" says the same thing forty times over, and the now-playing card
+    // shows it for the track that is open (#699). A done track that does not
+    // know its length says nothing rather than a placeholder.
+    parts = [track.duration ? fmtTime(track.duration) : ""];
   }
   if (inTrash) parts.push(i18nT("track.removed"));
   // Spaced as text as well as by the row's flex gap, so what a screen reader
@@ -1653,6 +1944,8 @@ function render() {
   const catalog = document.getElementById("catalogPanel");
   const searchInput = document.getElementById("catalogSearch");
   if (!list) return;
+  const openTags = openTrackTags();
+  _renderedTagsKey = openTags.join("\n");
 
   list.innerHTML = "";
   if (strip) strip.innerHTML = "";
@@ -1662,11 +1955,17 @@ function render() {
   const isTrashView = catalogView === "trash";
   const isFavoritesView = catalogView === "favorites";
   const isQueueView = catalogView === "queue";
-  const isLibraryView = !isTrashView && !isFavoritesView && !isQueueView;
+  const isLyricsView = catalogView === "lyrics";
+  const isLibraryView = !isTrashView && !isFavoritesView && !isQueueView && !isLyricsView;
 
   catalog?.classList.toggle("trash-view", isTrashView);
   catalog?.classList.toggle("favorites-view", isFavoritesView);
   catalog?.classList.toggle("queue-view", isQueueView);
+  // The lyrics panel replaces the list rather than being rendered into it;
+  // daw.css swaps which of the two is shown.
+  catalog?.classList.toggle("lyrics-view", isLyricsView);
+  document.querySelector(".rail-lyrics")?.classList.toggle("active", isLyricsView);
+  document.querySelector(".rail-lyrics")?.setAttribute("aria-pressed", String(isLyricsView));
 
   document.querySelector(".rail-library")?.classList.toggle("active", isLibraryView);
   document.querySelector(".rail-library")?.setAttribute("aria-pressed", String(isLibraryView));
@@ -1764,14 +2063,19 @@ function render() {
     return;
   }
 
-  // Tags section
-  const tags = getAllTags(trashIds);
-  if (tags.length) {
+  // Tags section: the open track's tags only. Every tag in the library was a
+  // wall of chips with nothing to say which song they came from. The count is
+  // still library-wide, since it is how many tracks the chip's filter finds.
+  // setCurrentTrack() re-renders when the open track's tags change.
+  if (openTags.length) {
+    const counts = new Map(getAllTags(trashIds));
     const section = makeSectionEl(i18nT("library.tags"));
+    section.classList.add("lib-tags-section");
     const row = document.createElement("div");
     row.className = "lib-tags-row";
     const activeTag = catalogSearchQuery.startsWith("#") ? catalogSearchQuery.slice(1) : null;
-    for (const [tag, count] of tags) {
+    for (const tag of openTags) {
+      const count = counts.get(tag) ?? 1;
       const chip = document.createElement("button");
       chip.className = `lib-tag-chip${activeTag === tag ? " active" : ""}`;
       chip.type = "button";
@@ -2220,6 +2524,7 @@ function wireCatalogRailViews() {
   document.querySelector(".rail-library")?.addEventListener("click", () => setCatalogView("library"));
   document.querySelector(".rail-favorites")?.addEventListener("click", () => setCatalogView("favorites"));
   document.querySelector(".rail-trash")?.addEventListener("click", () => setCatalogView("trash"));
+  document.querySelector(".rail-lyrics")?.addEventListener("click", () => setCatalogView("lyrics"));
   document.querySelector(".rail-queue")?.addEventListener("click", () => setCatalogView("queue"));
   document.getElementById("clearBinBtn")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget;
@@ -2395,6 +2700,12 @@ function normalizeVersion(value) {
 // ("0.7.0-alpha.9") and the backend's PEP440 package version ("0.7.0a9", from
 // hatch-vcs via /api/health) compare equal. Without this the update banner
 // shows on every release because the two strings never match literally.
+// A build no release should be offered to: a source checkout's git-derived
+// version (0.7.0a5.dev3+g1a2b3c4) or a test build's (0.18.2.dev0).
+function isDevVersion(value) {
+  return /\.?dev\d*|\+/i.test(normalizeVersion(value));
+}
+
 function canonicalVersion(value) {
   return normalizeVersion(value)
     .toLowerCase()
@@ -2828,7 +3139,9 @@ async function checkForUpdate() {
     if (!latest || canonicalVersion(latest) === canonicalVersion(currentVersion)) return;
     // Dev/source builds report a git-derived version (e.g. 0.7.0a5.dev3+g…) that
     // is *ahead* of the last release — don't nag them with an "update" banner.
-    if (/\bdev\b|\+/.test(currentVersion)) return;
+    // A test build is 0.18.2.dev0: "dev" runs straight into its number, which
+    // a word boundary after it never matched.
+    if (isDevVersion(currentVersion)) return;
 
     let dismissed = null;
     try { dismissed = localStorage.getItem(DISMISSED_UPDATE_KEY); } catch (e) { console.warn(e); }
@@ -3108,6 +3421,22 @@ async function syncWithServer() {
         // whole library shows its icons at startup.
         if (!known.sourceFormat && state.source_format) {
           known.sourceFormat = state.source_format;
+          backfilled = true;
+        }
+        // Likewise the band the server found while the job ran (#699), for a
+        // track added before its import finished. Never over one already
+        // saved on the track.
+        if (!known.artist && libraryArtist(state.artist)) {
+          known.artist = libraryArtist(state.artist);
+          backfilled = true;
+        }
+        // And the identity and the work behind a soundtrack, the same way.
+        if (!known.identity && libraryIdentity(state.identity)) {
+          known.identity = libraryIdentity(state.identity);
+          backfilled = true;
+        }
+        if (!known.work && libraryWork(state.work)) {
+          known.work = libraryWork(state.work);
           backfilled = true;
         }
         continue;
@@ -3468,6 +3797,108 @@ function wireLanguageSetting(overlay) {
   sel.addEventListener("change", () => setLanguage(sel.value));
 }
 
+// A key the user pastes for a lookup service (Settings > Song details): the
+// AcoustID key for song identification (app/pipeline/identify.py) and the
+// Discogs token for band profiles. The server never hands one back, only
+// whether one is set and its last two characters, so the field starts empty
+// every time and the line under it says which is saved. Saved on the button,
+// not on change: a half-typed key must not be sent, and a refused one has to
+// say so.
+async function wireSecretSetting(overlay, spec) {
+  const input = overlay.querySelector(spec.input);
+  const saveBtn = overlay.querySelector(spec.save);
+  const clearBtn = overlay.querySelector(spec.clear);
+  const msg = overlay.querySelector(spec.msg);
+  if (!input || !saveBtn || !clearBtn || !msg) return;
+
+  let isSet = false;
+  const show = (d) => {
+    isSet = d?.[spec.setField] === true;
+    msg.classList.remove("error");
+    msg.textContent = isSet
+      ? i18nT(`${spec.keys}.saved`, { tail: d[spec.tailField] || "" })
+      : i18nT(`${spec.keys}.none`);
+  };
+  const syncSave = () => { saveBtn.disabled = !input.value.trim(); };
+
+  const send = async (value) => {
+    saveBtn.disabled = true;
+    clearBtn.disabled = true;
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [spec.field]: value }),
+      });
+      if (r.ok) {
+        input.value = "";
+        show(await r.json());
+      } else {
+        // The server's detail is English; the translated line reads right in
+        // every language. The typed key stays in the field to be corrected.
+        // One the service itself refused gets a line saying which to use.
+        const detail = (await r.json().catch(() => null))?.detail;
+        const refused = detail === spec.refusedDetail;
+        msg.textContent = i18nT(`${spec.keys}.${refused ? "refused" : "invalid"}`);
+        msg.classList.add("error");
+      }
+    } catch (err) {
+      console.warn(`saving ${spec.field} failed:`, err);
+      msg.textContent = i18nT(`${spec.keys}.failed`);
+      msg.classList.add("error");
+    } finally {
+      syncSave();
+      clearBtn.disabled = !isSet;
+    }
+  };
+
+  input.addEventListener("input", syncSave);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && input.value.trim()) send(input.value.trim());
+  });
+  saveBtn.addEventListener("click", () => send(input.value.trim()));
+  clearBtn.addEventListener("click", () => send(""));
+  syncSave();
+  clearBtn.disabled = true;
+  try {
+    const r = await fetch("/api/settings", { cache: "no-store" });
+    if (r.ok) show(await r.json());
+  } catch (err) {
+    console.warn(`reading the ${spec.field} state failed:`, err);
+  }
+  clearBtn.disabled = !isSet;
+}
+
+function wireAcoustidSetting(overlay) {
+  return wireSecretSetting(overlay, {
+    input: ".set-acoustid-key",
+    save: ".set-acoustid-save",
+    clear: ".set-acoustid-clear",
+    msg: ".acoustid-key-msg",
+    field: "acoustid_api_key",
+    setField: "acoustid_api_key_set",
+    tailField: "acoustid_api_key_tail",
+    // A key AcoustID refused is almost always the user key from the profile
+    // page, which only submits fingerprints.
+    refusedDetail: "AcoustID does not accept this key",
+    keys: "settings.acoustid",
+  });
+}
+
+function wireDiscogsSetting(overlay) {
+  return wireSecretSetting(overlay, {
+    input: ".set-discogs-token",
+    save: ".set-discogs-save",
+    clear: ".set-discogs-clear",
+    msg: ".discogs-token-msg",
+    field: "discogs_token",
+    setField: "discogs_token_set",
+    tailField: "discogs_token_tail",
+    refusedDetail: "Discogs does not accept this token",
+    keys: "settings.discogs",
+  });
+}
+
 // General settings: max track length (minutes), playlist import limit, and
 // MP4 video quality. Read live
 // and POSTed on change to /api/settings (same runtime store as the toggle).
@@ -3481,13 +3912,14 @@ async function wireGeneralSettings(overlay) {
   const deviceSel = overlay.querySelector(".set-demucs-device");
   const deviceDesc = overlay.querySelector(".set-demucs-desc");
   const qualitySel = overlay.querySelector(".set-separation-quality");
+  const transcribeSel = overlay.querySelector(".set-transcribe-lyrics");
   const cookiesInput = overlay.querySelector(".set-cookies-file");
   const cookiesMsg = overlay.querySelector(".cookies-file-msg");
   const autoDeleteInput = overlay.querySelector(".auto-delete-input");
   const autoDeleteDaysRow = overlay.querySelector(".auto-delete-days-row");
   const autoDeleteDays = overlay.querySelector(".set-auto-delete-days");
   const autoDeleteDaysDesc = overlay.querySelector(".auto-delete-days-desc");
-  if (!durInput && !playlistInput && !heightSel && !sampleRateSel && !portInput && !deviceSel && !qualitySel && !cookiesInput && !autoDeleteInput) return;
+  if (!durInput && !playlistInput && !heightSel && !sampleRateSel && !portInput && !deviceSel && !qualitySel && !transcribeSel && !cookiesInput && !autoDeleteInput) return;
 
   // Last server-confirmed device choice, to revert the select when the server
   // rejects a forced device (e.g. CUDA not available on this machine).
@@ -3516,6 +3948,7 @@ async function wireGeneralSettings(overlay) {
     if (sampleRateSel && d.export_sample_rate) sampleRateSel.value = String(d.export_sample_rate);
     if (portInput && d.port) portInput.value = String(d.port);
     if (qualitySel && d.separation_quality) qualitySel.value = d.separation_quality;
+    if (transcribeSel && d.transcribe_lyrics) transcribeSel.value = d.transcribe_lyrics;
     // Unset is the normal case, so read the key rather than truthiness --
     // clearing the field must survive the round trip and not be repopulated.
     if (cookiesInput && "cookies_file" in d) cookiesInput.value = d.cookies_file || "";
@@ -3643,6 +4076,9 @@ async function wireGeneralSettings(overlay) {
   });
   qualitySel?.addEventListener("change", () => {
     post({ separation_quality: qualitySel.value });
+  });
+  transcribeSel?.addEventListener("change", () => {
+    post({ transcribe_lyrics: transcribeSel.value });
   });
   autoDeleteInput?.addEventListener("change", () => {
     // Enable the days field immediately rather than waiting for the round
@@ -4004,6 +4440,7 @@ function openLibraryEditor() {
       </div>
       <div class="settings-tabs" role="tablist">
         <button class="settings-tab active" type="button" data-tab="general" role="tab" data-i18n="settings.tab.general">General</button>
+        <button class="settings-tab" type="button" data-tab="details" role="tab" data-i18n="settings.tab.songDetails">Song details</button>
         <button class="settings-tab" type="button" data-tab="network" role="tab" data-i18n="settings.tab.network">Network</button>
         <button class="settings-tab" type="button" data-tab="export" role="tab" data-i18n="settings.tab.export">Export</button>
         <button class="settings-tab" type="button" data-tab="logs" role="tab" data-i18n="settings.tab.logs">Logs</button>
@@ -4136,6 +4573,52 @@ function openLibraryEditor() {
               <div class="settings-row-desc" data-i18n="settings.resetData.desc">Permanently deletes every track, job, and library entry. On a shared server this affects everyone who uses it. Cannot be undone.</div>
             </div>
             <button class="settings-reset-btn" type="button" data-i18n="settings.resetData.button">Reset app data…</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-pane hidden" data-pane="details">
+        <div class="settings-section">
+          <div class="settings-row settings-row-stack acoustid-row">
+            <div class="settings-row-text">
+              <div class="settings-row-title" data-i18n="settings.acoustid.title">Song identification</div>
+              <div class="settings-row-desc" data-i18n="settings.acoustid.desc">Optional. With a free AcoustID key, each import is identified by its audio fingerprint. Only the fingerprint is sent to AcoustID, never the audio. Without a key, tracks are identified by their tags on MusicBrainz.</div>
+            </div>
+            <div class="acoustid-key">
+              <input type="password" class="settings-text-input set-acoustid-key" spellcheck="false" autocomplete="off" maxlength="64" placeholder="AcoustID API key" data-i18n-placeholder="settings.acoustid.placeholder" aria-label="AcoustID API key" data-i18n-aria-label="settings.acoustid.placeholder" />
+              <button class="settings-btn set-acoustid-save" type="button" data-i18n="settings.acoustid.save">Save</button>
+              <button class="settings-btn set-acoustid-clear" type="button" data-i18n="settings.acoustid.clear">Clear</button>
+            </div>
+            <div class="acoustid-key-msg" role="status" aria-live="polite"></div>
+            <a class="acoustid-register" href="https://acoustid.org/new-application" target="_blank" rel="noopener noreferrer" data-i18n="settings.acoustid.register">Register a free key at acoustid.org</a>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-row settings-row-stack discogs-row">
+            <div class="settings-row-text">
+              <div class="settings-row-title" data-i18n="settings.discogs.title">Discogs</div>
+              <div class="settings-row-desc" data-i18n="settings.discogs.desc">Band profiles, members and releases for bands Wikipedia does not cover, from Discogs. Optional.</div>
+              <div class="settings-row-desc discogs-privacy" data-i18n="settings.discogs.privacy">Band names are sent to Discogs only when a token is saved, and only for a band Wikipedia has no history, members or albums for, or a name you search for that Wikipedia does not have.</div>
+            </div>
+            <div class="discogs-token">
+              <input type="password" class="settings-text-input set-discogs-token" spellcheck="false" autocomplete="off" maxlength="80" placeholder="Discogs personal access token" data-i18n-placeholder="settings.discogs.placeholder" aria-label="Discogs personal access token" data-i18n-aria-label="settings.discogs.placeholder" />
+              <button class="settings-btn set-discogs-save" type="button" data-i18n="settings.discogs.save">Save</button>
+              <button class="settings-btn set-discogs-clear" type="button" data-i18n="settings.discogs.clear">Clear</button>
+            </div>
+            <div class="discogs-token-msg" role="status" aria-live="polite"></div>
+            <a class="discogs-register" href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener noreferrer" data-i18n="settings.discogs.register">Get a free token at discogs.com</a>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-row">
+            <div class="settings-row-text">
+              <div class="settings-row-title" data-i18n="settings.transcribe.title">Transcribe lyrics</div>
+              <div class="settings-row-desc" data-i18n="settings.transcribe.desc">When no lyrics are found for a track, transcribe them from its vocals locally with Whisper. Auto does this only on an NVIDIA GPU. The first run downloads a speech model (1.6 GB for an NVIDIA GPU, 0.5 GB otherwise). Applies to the next track.</div>
+            </div>
+            <select class="settings-select settings-select-wide set-transcribe-lyrics" aria-label="Transcribe lyrics" data-i18n-aria-label="settings.transcribe.title">
+              <option value="auto" data-i18n="settings.transcribe.auto">Auto (NVIDIA GPU only)</option>
+              <option value="on" data-i18n="settings.transcribe.on">On</option>
+              <option value="off" data-i18n="settings.transcribe.off">Off</option>
+            </select>
           </div>
         </div>
       </div>
@@ -4289,6 +4772,8 @@ function openLibraryEditor() {
   const isDesktop = Boolean(window.__TAURI__?.core?.invoke);
   wireLanguageSetting(overlay);
   wireGeneralSettings(overlay);
+  wireAcoustidSetting(overlay);
+  wireDiscogsSetting(overlay);
   wireStemsLocation(overlay);
   wireExportsLocation(overlay);
   wireNetworkSetting(overlay);

@@ -9,8 +9,8 @@ import time
 import uuid
 from pathlib import Path
 
-from app.core.config import DEMUCS_MODEL, EXTRA_STEM_NAMES, JOB_ID_RE, STEM_NAMES
-from app.core.models import Job
+from app.core.config import DEMUCS_MODEL, EXTRA_STEM_NAMES, JOB_ID_RE, LYRICS_FILE, STEM_NAMES
+from app.core.models import Job, clean_artist, clean_audio_tags, clean_identity, clean_work
 
 logger = logging.getLogger("stemdeck.registry")
 
@@ -368,6 +368,12 @@ def _recover_done_job(job_dir: Path) -> Job | None:
         sections=meta.get("sections"),
         sections_source=meta.get("sections_source"),
         tags=meta.get("tags"),
+        audio_tags=clean_audio_tags(meta.get("audio_tags")),
+        identity=clean_identity(meta.get("identity")),
+        artist=clean_artist(meta.get("artist")),
+        work=clean_work(meta.get("work")),
+        # The file is the record: metadata.json predates it for most jobs.
+        has_lyrics=(job_dir / LYRICS_FILE).is_file(),
         vocal_split=vocal_split,
     )
 
